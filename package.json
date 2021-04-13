@@ -1,0 +1,24 @@
+{
+  "name": "purescript-event",
+  "version": "1.0.0",
+  "description": "The `Event` type, extracted from my `purescript-behaviors` library.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikesol/purescript-event.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mikesol/purescript-event/issues"
+  },
+  "homepage": "https://github.com/mikesol/purescript-event#readme",
+  "devDependencies": {
+    "purescript": "^0.14.0",
+    "spago": "^0.20.0"
+  }
+}
