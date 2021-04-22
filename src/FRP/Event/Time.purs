@@ -11,7 +11,7 @@ import Prelude
 import Data.DateTime.Instant (Instant, instant, unInstant)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.Set (Set(..), singleton, delete)
+import Data.Set (Set, singleton, delete)
 import Data.Time.Duration (Milliseconds)
 import Effect.Now (now)
 import Effect.Ref as Ref
