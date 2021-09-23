@@ -180,11 +180,11 @@ fix f =
 -- |
 -- | `subscribe` returns a canceller function.
 subscribe ::
-  forall r a.
+  forall a.
   Event a ->
-  (a -> Effect r) ->
+  (a -> Effect Unit) ->
   Effect (Effect Unit)
-subscribe (Event e) k = e (void <<< k)
+subscribe (Event e) k = e k
 
 -- | Make an `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.
