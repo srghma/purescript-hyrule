@@ -4,6 +4,7 @@ module FRP.Event.Memoize
   , isMemoizable
   , memoizeIfMemoizable
   , unsafeMemoize
+  , unsafeMarkAsMemoized
   , class MemoizableEvent
   ) where
 
@@ -11,6 +12,10 @@ import Prelude
 
 import Effect (Effect)
 import FRP.Event as Event
+
+unsafeMarkAsMemoized :: Event.Event ~> Event.Event
+unsafeMarkAsMemoized = unsafeMarkAsMemoizedImpl
+foreign import unsafeMarkAsMemoizedImpl :: Event.Event ~> Event.Event
 
 unsafeMemoize :: Event.Event ~> Event.Event
 unsafeMemoize = unsafeMemoizeImpl

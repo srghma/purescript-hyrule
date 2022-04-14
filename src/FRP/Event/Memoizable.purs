@@ -22,7 +22,7 @@ import Effect (Effect)
 import FRP.Event (class Filterable, fix, fold, keepLatest, sampleOn)
 import FRP.Event as Event
 import FRP.Event.Class (class Filterable, class IsEvent, biSampleOn, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOn, sampleOn_, withLast) as Class
-import FRP.Event.Memoize (class MemoizableEvent, isMemoizable, unsafeMemoize)
+import FRP.Event.Memoize (class MemoizableEvent, isMemoizable, unsafeMarkAsMemoized, unsafeMemoize)
 import Safe.Coerce (coerce)
 
 fromEvent :: Event.Event ~> Event
@@ -144,4 +144,4 @@ type EventIO a =
 create
   :: forall a
    . Effect (EventIO a)
-create = Event.create <#> \i -> i { event = Event $ unsafeMemoize i.event }
+create = Event.create <#> \i -> i { event = Event $ unsafeMarkAsMemoized i.event }
