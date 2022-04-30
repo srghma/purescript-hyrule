@@ -16,7 +16,6 @@ You can edit this file as you like.
   , "now"
   , "ordered-collections"
   , "prelude"
-  , "psci-support"
   , "record"
   , "refs"
   , "tuples"

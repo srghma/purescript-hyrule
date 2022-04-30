@@ -1,6 +1,6 @@
 {
   "name": "purescript-event",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "The `Event` type, extracted from my `purescript-behaviors` library.",
   "main": "index.js",
   "scripts": {
@@ -18,8 +18,8 @@
   },
   "homepage": "https://github.com/mikesol/purescript-event#readme",
   "devDependencies": {
-    "purescript": "^0.14.0",
+    "purescript": "^0.15.0",
     "purs-tidy": "^0.7.2",
-    "spago": "^0.20.0"
+    "spago": "^0.20.8"
   }
 }

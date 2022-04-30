@@ -23,7 +23,7 @@ import FRP.Event.Legacy as Legacy
 import FRP.Event.STMemoized (toEvent)
 import FRP.Event.STMemoized as STMemoized
 import FRP.Event.VBus (V, vbus)
-import Test.Spec (Spec, describe, it)
+import Test.Spec (Spec, describe, it, itOnly)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)

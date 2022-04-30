@@ -1,12 +1,13 @@
-exports.actualizeMMZ_ = function (mmz) {
+export function actualizeMMZ_(mmz) {
 	return function () {
 		if (!mmz.ctx.start.actualized) {
 			mmz.ctx.start.actualized = true;
 			mmz.ctx.start.event()();
 		}
 	};
-};
-exports.mmzStart_ = function (e) {
+}
+
+export function mmzStart_(e) {
 	const next = {
 		type: "start",
 		value: undefined,
@@ -20,8 +21,9 @@ exports.mmzStart_ = function (e) {
 	next.ctx[0][0] = next;
 	next.ctx.start = next;
 	return next;
-};
-exports.mmzMap = function (ab) {
+}
+
+export function mmzMap(ab) {
 	return function (fa) {
 		const depth = fa.depth + 1;
 		const depthM1 = depth - 1;
@@ -33,14 +35,17 @@ exports.mmzMap = function (ab) {
 			memo: undefined,
 			ctx: fa.ctx,
 		};
-		if (fa.ctx[depthM1] === undefined) {
-			fa.ctx[depthM1] = [];
+		if (fa.ctx) {
+			if (fa.ctx[depthM1] === undefined) {
+				fa.ctx[depthM1] = [];
+			}
+			fa.ctx[depthM1].push(next);
 		}
-		fa.ctx[depthM1].push(next);
 		return next;
 	};
-};
-exports.mmzBang = function (a) {
+}
+
+export function mmzBang(a) {
 	return {
 		type: "bang",
 		value: a,
@@ -48,8 +53,9 @@ exports.mmzBang = function (a) {
 		cbs: [],
 		memo: [a],
 	};
-};
-exports.mmzAlt = function (fa) {
+}
+
+export function mmzAlt(fa) {
 	return function (fb) {
 		const depth = Math.max(fa.depth, fb.depth) + 1;
 		const depthM1 = depth - 1;
@@ -59,25 +65,30 @@ exports.mmzAlt = function (fa) {
 			cbs: [],
 			depth: depth,
 			memo: undefined,
-			ctx: fa.ctx,
+			ctx: fa.ctx || fb.ctx,
 		};
-		if (fa.ctx[depthM1] === undefined) {
-			fa.ctx[depthM1] = [];
+		if (next.ctx) {
+			if (next.ctx[depthM1] === undefined) {
+				next.ctx[depthM1] = [];
+			}
+			next.ctx[depthM1].push(next);
 		}
-		fa.ctx[depthM1].push(next);
 		return next;
 	};
-};
-exports.mmzEmpty = {
+}
+
+export const mmzEmpty = {
 	type: "empty",
 	cbs: [],
 	depth: 0,
 	memo: [],
 };
-exports.mmzKeepLatest = function (ffa) {
+
+export function mmzKeepLatest(ffa) {
 	return ffa.value;
-};
-exports.mmzSampleOn = function (fa) {
+}
+
+export function mmzSampleOn(fa) {
 	return function (fab) {
 		const depth = Math.max(fab.depth, fa.depth) + 1;
 		const depthM1 = depth - 1;
@@ -87,16 +98,19 @@ exports.mmzSampleOn = function (fa) {
 			cbs: [],
 			depth: depth,
 			memo: undefined,
-			ctx: fa.ctx,
+			ctx: fa.ctx || fab.ctx,
 		};
-		if (fa.ctx[depthM1] === undefined) {
-			fa.ctx[depthM1] = [];
+		if (next.ctx) {
+			if (next.ctx[depthM1] === undefined) {
+				next.ctx[depthM1] = [];
+			}
+			next.ctx[depthM1].push(next);
 		}
-		fa.ctx[depthM1].push(next);
 		return next;
 	};
-};
-exports.mmzPartitionMap = function (aelr) {
+}
+
+export function mmzPartitionMap(aelr) {
 	return function (fa) {
 		const depth = fa.depth + 1;
 		const depthM1 = depth - 1;
@@ -116,15 +130,18 @@ exports.mmzPartitionMap = function (aelr) {
 			memo: undefined,
 			ctx: fa.ctx,
 		};
-		if (fa.ctx[depthM1] === undefined) {
-			fa.ctx[depthM1] = [];
+		if (fa.ctx) {
+			if (fa.ctx[depthM1] === undefined) {
+				fa.ctx[depthM1] = [];
+			}
+			fa.ctx[depthM1].push(left);
+			fa.ctx[depthM1].push(right);
 		}
-		fa.ctx[depthM1].push(left);
-		fa.ctx[depthM1].push(right);
 		return { left: left, right: right };
 	};
-};
-exports.mmzFold = function (abb) {
+}
+
+export function mmzFold(abb) {
 	return function (fa) {
 		return function (b) {
 			const depth = fa.depth + 1;
@@ -137,20 +154,21 @@ exports.mmzFold = function (abb) {
 				memo: undefined,
 				ctx: fa.ctx,
 			};
-			if (fa.ctx[depthM1] === undefined) {
-				fa.ctx[depthM1] = [];
+			if (fa.ctx) {
+				if (fa.ctx[depthM1] === undefined) {
+					fa.ctx[depthM1] = [];
+				}
+				fa.ctx[depthM1].push(next);
 			}
-			fa.ctx[depthM1].push(next);
 			return next;
 		};
 	};
-};
+}
 
 const runMMZInternal = function (opts, ctx) {
 	for (var ij = 0; ij < ctx.length; ij++) {
 		for (var ix = 0; ix < ctx[ij].length; ix++) {
 			var mmz = ctx[ij][ix];
-			//console.log("doing", mmz.type);
 			if (mmz.type === "start") {
 				mmz.memo = [mmz.value];
 			} else if (mmz.type === "bang") {
@@ -168,11 +186,9 @@ const runMMZInternal = function (opts, ctx) {
 				}
 			} else if (mmz.type === "alt") {
 				mmz.memo = [];
-				//console.log(mmz.value.fa.type, mmz.value.fa.memo);
 				for (var i = 0; i < mmz.value.fa.memo.length; i++) {
 					mmz.memo.push(mmz.value.fa.memo[i]);
 				}
-				//console.log(mmz.value.fb.type, mmz.value.fb.memo);
 				for (var i = 0; i < mmz.value.fb.memo.length; i++) {
 					mmz.memo.push(mmz.value.fb.memo[i]);
 				}
@@ -213,7 +229,8 @@ const runMMZInternal = function (opts, ctx) {
 		}
 	}
 };
-exports.addSubscription_ = function (sub) {
+
+export function addSubscription_(sub) {
 	return function (mmz) {
 		return function () {
 			if (mmz.type !== "empty") {
@@ -226,9 +243,9 @@ exports.addSubscription_ = function (sub) {
 			}
 		};
 	};
-};
+}
 
-exports.removeSubscription_ = function (sub) {
+export function removeSubscription_(sub) {
 	return function (mmz) {
 		return function () {
 			if (mmz.type !== "empty") {
@@ -238,8 +255,9 @@ exports.removeSubscription_ = function (sub) {
 			}
 		};
 	};
-};
-exports.runMMZ_ = function (opts) {
+}
+
+export function runMMZ_(opts) {
 	return function (r) {
 		return function (mmz) {
 			return function () {
@@ -251,4 +269,4 @@ exports.runMMZ_ = function (opts) {
 			};
 		};
 	};
-};
+}
