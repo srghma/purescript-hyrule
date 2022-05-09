@@ -2,9 +2,9 @@ module FRP.Event.VBus where
 
 import Prelude
 
+import Control.Monad.ST.Class (class MonadST)
 import Data.Symbol (class IsSymbol)
-import Effect (Effect)
-import FRP.Event (Event, makeEvent)
+import FRP.Event (AnEvent, makeEvent)
 import Prim.Row as R
 import Prim.RowList (class RowToList, RowList)
 import Prim.RowList as RL
@@ -53,8 +53,8 @@ instance vbusCons1 ::
 
 else instance vbusCons2::
   ( IsSymbol key
-  , R.Cons key (z -> Effect Unit) p' p
-  , R.Cons key (Event z) e' e
+  , R.Cons key (z -> m Unit) p' p
+  , R.Cons key (AnEvent m z) e' e
   , VBus rest p' e' u'
   , R.Cons key z u' u
   , R.Lacks key p'
@@ -74,20 +74,21 @@ else instance vbusCons2::
 
 data S
 
-foreign import unsafeDestroyS :: S -> Effect Unit
+foreign import unsafeDestroyS :: forall m. S -> m Unit
 
 foreign import unsafePE
-  :: forall u p e
+  :: forall m u p e
    . V u
-  -> Effect { p :: { | p }, e :: { | e }, s :: S }
+  -> m { p :: { | p }, e :: { | e }, s :: S }
 
 vbus
-  :: forall proxy ri i p e o u
+  :: forall proxy ri i s m p e o u
    . RowToList i ri
+  => MonadST s m
   => VBus ri p e u
   => proxy (V i)
   -> ({ | p } -> { | e } -> o)
-  -> Event o
+  -> AnEvent m o
 vbus _ f = makeEvent \k -> do
   upe <- unsafePE vbd
   k (f upe.p upe.e)
