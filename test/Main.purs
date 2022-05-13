@@ -18,16 +18,17 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (keepLatest, memoize, sampleOn)
+import FRP.Event (hot, keepLatest, makeEvent, memoize, sampleOn)
 import FRP.Event as Event
 import FRP.Event.Class (class IsEvent, bang, fold)
 import FRP.Event.Legacy as Legacy
-import FRP.Event.Time (debounce)
+import FRP.Event.Time (debounce, interval)
 import FRP.Event.VBus (V, vbus)
-import Test.Spec (Spec, describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec (Spec, describe, it, itOnly)
+import Test.Spec.Assertions (shouldEqual, shouldNotSatisfy, shouldSatisfy)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner (runSpec)
@@ -321,6 +322,23 @@ main = do
               push 0
               Ref.read count >>= shouldEqual 2
               usu
+        describe "Hot" do
+          itOnly "is hot" do
+            r <- liftEffect $ Ref.new 0
+            x <- liftEffect $ Ref.new 0
+            let
+              subs e = makeEvent \k -> do
+                Ref.modify_ (add 1) r
+                Event.subscribe e k
+            { event, unsubscribe } <- liftEffect $ hot (subs (interval 50))
+            u0 <- liftEffect $ Event.subscribe event \_ -> Ref.modify_ (add 1) x
+            u1 <- liftEffect $ Event.subscribe event \_ -> Ref.modify_ (add 1) x
+            delay (Milliseconds 800.0)
+            liftEffect $ u0 *> u1 *> unsubscribe
+            x' <- liftEffect $ Ref.read x
+            r' <- liftEffect $ Ref.read r
+            x' `shouldSatisfy` (_ > 10)
+            r' `shouldEqual` 1
         describe "Legacy" do
           it "has a somewhat puzzling result when it adds itself to itself (2 + 2 = 3)" $ liftEffect do
             rf <- Ref.new []

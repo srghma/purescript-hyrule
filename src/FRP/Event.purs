@@ -14,6 +14,7 @@ module FRP.Event
   , toEvent
   , FromEvent
   , fromEvent
+  , hot
   ) where
 
 import Prelude
@@ -225,17 +226,28 @@ bang a =
     k a
     in pure unit
 
+-- | Creates an event bus within a closure.
 bus :: forall m s r a. MonadST s m => ((a -> m Unit) -> AnEvent m a -> r) -> AnEvent m r
 bus f = makeEvent \k -> do
   { push, event } <- create
   k (f push event)
   pure (pure unit)
 
+-- | Takes an event and memoizes it within a closure.
+-- | All interactions with the event in the closure will not trigger a fresh
+-- | subscription. Outside the closure does, however, trigger a fresh subscription.
 memoize :: forall m s r a. MonadST s m => AnEvent m a -> (AnEvent m a -> r) -> AnEvent m r
 memoize e f = makeEvent \k -> do
   { push, event } <- create
   k (f event)
   subscribe e push
+
+-- | Makes an event hot, meaning that it will start firing on left-bind. This means that `bang` should never be used with `hot` as it will be lost. Use this for loops, for example.
+hot :: forall m s a. MonadST s m => AnEvent m a -> m { event :: AnEvent m a, unsubscribe :: m Unit }
+hot e = do
+  { event, push } <- create
+  unsubscribe <- subscribe e push
+  pure { event, unsubscribe }
 
 --
 instance Action (Additive Int) (Event a) where
@@ -263,8 +275,8 @@ delay n e =
       for_ ids clearTimeout
       canceler
 
-type ToEvent m a
-   = Always (Endo Function (Effect Unit)) (Endo Function (m Unit))
+type ToEvent m a =
+  Always (Endo Function (Effect Unit)) (Endo Function (m Unit))
   => Always (m (m Unit)) (Effect (Effect Unit))
   => Applicative m
   => a
@@ -276,8 +288,8 @@ toEvent (AnEvent i) = AnEvent $
     (always :: m (m Unit) -> Effect (Effect Unit))
     i
 
-type FromEvent m a
-   = Always (m Unit) (Effect Unit)
+type FromEvent m a =
+  Always (m Unit) (Effect Unit)
   => Always (Endo Function (Effect (Effect Unit))) (Endo Function (m (m Unit)))
   => Applicative m
   => a
