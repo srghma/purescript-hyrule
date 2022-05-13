@@ -18,7 +18,6 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (hot, keepLatest, makeEvent, memoize, sampleOn)
@@ -27,8 +26,8 @@ import FRP.Event.Class (class IsEvent, bang, fold)
 import FRP.Event.Legacy as Legacy
 import FRP.Event.Time (debounce, interval)
 import FRP.Event.VBus (V, vbus)
-import Test.Spec (Spec, describe, it, itOnly)
-import Test.Spec.Assertions (shouldEqual, shouldNotSatisfy, shouldSatisfy)
+import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner (runSpec)
@@ -323,7 +322,7 @@ main = do
               Ref.read count >>= shouldEqual 2
               usu
         describe "Hot" do
-          itOnly "is hot" do
+          it "is hot" do
             r <- liftEffect $ Ref.new 0
             x <- liftEffect $ Ref.new 0
             let
