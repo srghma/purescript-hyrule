@@ -40,7 +40,7 @@ export function unsafePE(u) {
 						const k = `${Math.random()}`;
 						s[rn][k] = f;
 						return () => {
-							delete s[rn][k];
+							s[rn] && s[rn][k] && delete s[rn][k];
 						};
 					};
 				}
