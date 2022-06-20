@@ -115,11 +115,6 @@ let additions =
         , repo = "https://github.com/mikesol/purescript-monoid-extras.git"
         , version = "v0.0.1"
         }
-      , functor1 =
-        { dependencies = [ "prelude" ]
-        , repo = "https://github.com/garyb/purescript-functor1.git"
-        , version = "v2.0.0"
-        }
       }
 
 in  upstream // additions

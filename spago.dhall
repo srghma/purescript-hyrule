@@ -1,4 +1,4 @@
-{ name = "event"
+{ name = "hyrule"
 , dependencies =
   [ "arrays"
   , "control"
@@ -8,11 +8,13 @@
   , "filterable"
   , "foldable-traversable"
   , "js-timers"
+  , "lists"
   , "maybe"
   , "monoid-extras"
   , "newtype"
   , "now"
   , "ordered-collections"
+  , "partial"
   , "prelude"
   , "profunctor"
   , "record"
@@ -21,6 +23,9 @@
   , "tuples"
   , "unsafe-coerce"
   , "unsafe-reference"
+  , "web-events"
+  , "web-html"
+  , "web-uievents"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]

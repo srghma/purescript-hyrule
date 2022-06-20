@@ -1,22 +1,22 @@
 {
-  "name": "purescript-event",
-  "version": "1.6.9",
-  "description": "The `Event` type, extracted from my `purescript-behaviors` library.",
+  "name": "purescript-hyrule",
+  "version": "2.0.0",
+  "description": "A rock-hard fork of `purescript-event`.",
   "main": "index.js",
   "scripts": {
     "test": "spago -x test.dhall test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mikesol/purescript-event.git"
+    "url": "git+https://github.com/mikesol/purescript-hyrule.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/mikesol/purescript-event/issues"
+    "url": "https://github.com/mikesol/purescript-hyrule/issues"
   },
-  "homepage": "https://github.com/mikesol/purescript-event#readme",
+  "homepage": "https://github.com/mikesol/purescript-hyrule#readme",
   "devDependencies": {
     "purescript": "^0.15.0",
     "purs-tidy": "^0.7.2",

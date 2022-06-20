@@ -20,6 +20,7 @@ import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import FRP.Behavior (Behavior, behavior, gate)
 import FRP.Event (hot, keepLatest, makeEvent, memoize, sampleOn, sweep)
 import FRP.Event as Event
 import FRP.Event.Class (class IsEvent, bang, fold)
@@ -32,6 +33,10 @@ import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner (runSpec)
 import Type.Proxy (Proxy(..))
+
+refToBehavior :: Ref.Ref ~> Behavior
+refToBehavior r = behavior \e -> makeEvent \k -> Event.subscribe e \f -> Ref.read r >>=
+  (k <<< f)
 
 modify__ :: forall a r. (a -> a) -> STRef r a -> ST r Unit
 modify__ a b = void $ RRef.modify a b
@@ -580,3 +585,21 @@ main = do
             o <- Ref.read rf
             o `shouldEqual` [ unit, unit, unit ]
             unsub
+        describe "Gate" do
+          it "gates" $ liftEffect do
+            eio <- Event.create
+            rf <- Ref.new false
+            n <- Ref.new 0
+            let b = refToBehavior rf
+            _ <- Event.subscribe (gate b eio.event) \_ -> Ref.modify_ (add 1) n
+            eio.push unit
+            eio.push unit
+            Ref.write true rf
+            eio.push unit
+            eio.push unit
+            eio.push unit
+            Ref.write false rf
+            eio.push unit
+            eio.push unit
+            res <- Ref.read n
+            shouldEqual res 3

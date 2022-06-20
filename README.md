@@ -1,5 +1,5 @@
-# purescript-event
+# purescript-hyrule
 
-The `Event` type, extracted from my `purescript-behaviors` library.
+A rock-hard fork of Phil Freeman's `purescript-event`.
 
-- [Module Documentation](generated-docs/FRP/)
+While it remains true to the spirit of the original event, it adds lots of bells and whistles like memoization and event busses.
