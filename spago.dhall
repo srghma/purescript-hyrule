@@ -27,6 +27,8 @@
   , "web-html"
   , "web-uievents"
   ]
+, license = "BSD3"
+, repository = "https://github.com/mikesol/purescript-hyrule"
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
 }
