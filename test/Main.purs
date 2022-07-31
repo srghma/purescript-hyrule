@@ -570,20 +570,20 @@ main = do
             rf <- Ref.new []
             e <- Event.create
             unsub <- Event.subscribe (keepLatest $ mailboxed e.event \f -> f 3 <|> f 4) \i -> Ref.modify_ (cons i) rf
-            e.push 42
-            e.push 43
-            e.push 44
-            e.push 3 --
-            e.push 42
-            e.push 43
-            e.push 44
-            e.push 4 --
-            e.push 42
-            e.push 43
-            e.push 3 --
-            e.push 101
+            e.push { address: 42, payload: true }
+            e.push { address: 43, payload: true }
+            e.push { address: 44, payload: true }
+            e.push { address: 3, payload: true } --
+            e.push { address: 42, payload: false }
+            e.push { address: 43, payload: true }
+            e.push { address: 43, payload: false }
+            e.push { address: 4, payload: false } --
+            e.push { address: 42, payload: false }
+            e.push { address: 43, payload: true }
+            e.push { address: 3, payload: false } --
+            e.push { address: 101, payload: true }
             o <- Ref.read rf
-            o `shouldEqual` [ unit, unit, unit ]
+            o `shouldEqual` [ false, false, true ]
             unsub
         describe "Gate" do
           it "gates" $ liftEffect do

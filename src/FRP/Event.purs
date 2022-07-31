@@ -236,21 +236,33 @@ bus f = makeEvent \k -> do
   pure (pure unit)
 
 -- | Takes the entire domain of a and allows for ad-hoc specialization.
-mailboxed :: forall m s r a. Ord a => MonadST s m => AnEvent m a -> ((a -> AnEvent m Unit) -> r) -> AnEvent m r
+mailboxed :: forall m s r a b. Ord a => MonadST s m => AnEvent m { address :: a, payload :: b } -> ((a -> AnEvent m b) -> r) -> AnEvent m r
 mailboxed e f = makeEvent \k1 -> do
   r <- liftST $ Ref.new Map.empty
   k1 $ f \a -> makeEvent \k2 -> do
-    void $ liftST $ Ref.modify (Map.alter (case _ of
-      Nothing -> Just [k2]
-      Just arr -> Just (arr <> [k2])) a)  r
-    pure $ void $ liftST $ Ref.modify (Map.alter (case _ of
-      Nothing -> Nothing
-      Just arr -> Just (deleteBy unsafeRefEq k2 arr)) a) r
-  unsub <- subscribe e \a -> do
+    void $ liftST $ Ref.modify
+      ( Map.alter
+          ( case _ of
+              Nothing -> Just [ k2 ]
+              Just arr -> Just (arr <> [ k2 ])
+          )
+          a
+      )
+      r
+    pure $ void $ liftST $ Ref.modify
+      ( Map.alter
+          ( case _ of
+              Nothing -> Nothing
+              Just arr -> Just (deleteBy unsafeRefEq k2 arr)
+          )
+          a
+      )
+      r
+  unsub <- subscribe e \{ address, payload } -> do
     o <- liftST $ Ref.read r
-    case Map.lookup a o of
+    case Map.lookup address o of
       Nothing -> pure unit
-      Just arr -> for_ arr (_ $ unit)
+      Just arr -> for_ arr (_ $ payload)
   pure do
     -- free references - helps gc?
     void $ liftST $ Ref.write (Map.empty) r
