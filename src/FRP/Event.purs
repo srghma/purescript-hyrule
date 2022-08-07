@@ -2,10 +2,10 @@ module FRP.Event
   ( AnEvent
   , Event
   , EventIO
+  , bang
   , create
   , makeEvent
   , subscribe
-  , bang
   , bus
   , memoize
   , hot
@@ -20,16 +20,19 @@ module FRP.Event
 
 import Prelude
 
-import Control.Alternative (class Alt, class Plus)
+import Control.Alternative (class Alt, class Alternative, class Plus)
+import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
-import Data.Array (deleteBy)
+import Data.Array (deleteBy, length)
+import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
 import Data.Filterable as Filterable
 import Data.Foldable (for_, sequence_, traverse_)
+import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid.Action (class Action)
@@ -43,6 +46,7 @@ import Effect (Effect)
 import Effect.Ref as ERef
 import Effect.Timer (TimeoutId, clearTimeout, setTimeout)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOn, sampleOn_, withLast) as Class
+import Prim.TypeError (class Warn, Text)
 import Unsafe.Reference (unsafeRefEq)
 
 -- | An `Event` represents a collection of discrete occurrences with associated
@@ -110,12 +114,36 @@ instance altEvent :: Applicative m => Alt (AnEvent m) where
 instance plusEvent :: Applicative m => Plus (AnEvent m) where
   empty = AnEvent \_ -> pure (pure unit)
 
+instance applyEvent :: MonadST s m => Apply (AnEvent m) where
+  apply a b = biSampleOn a ((#) <$> b)
+
+instance applicativeEvent :: MonadST s m => Applicative (AnEvent m) where
+  pure a = AnEvent \k -> pure unit <$ k a
+
+bang :: forall s m a. Warn (Text "\"bang\" is deprecated and will be removed from a future version of this library. Please update your code to use \"pure\" instead of \"bang\".") =>  MonadST s m => a -> AnEvent m a
+bang = pure
+
+instance alternativeEvent :: MonadST s m => Alternative (AnEvent m)
+
 instance eventIsEvent :: MonadST s m => Class.IsEvent (AnEvent m) where
   fold = fold
   keepLatest = keepLatest
   sampleOn = sampleOn
   fix = fix
-  bang = bang
+
+instance semigroupEvent :: (Semigroup a, MonadST s m) => Semigroup (AnEvent m a) where
+  append = lift2 append
+
+instance monoidEvent :: (Monoid a, MonadST s m) => Monoid (AnEvent m a) where
+  mempty = pure mempty
+
+instance heytingAlgebraEvent :: (HeytingAlgebra a, MonadST s m) => HeytingAlgebra (AnEvent m a) where
+  tt = pure tt
+  ff = pure ff
+  not = map not
+  implies = lift2 implies
+  conj = lift2 conj
+  disj = lift2 disj
 
 -- | Fold over values received from some `Event`, creating a new `Event`.
 fold :: forall m s a b. MonadST s m => (a -> b -> b) -> AnEvent m a -> b -> AnEvent m b
@@ -144,6 +172,46 @@ sampleOn (AnEvent e1) (AnEvent e2) =
     c2 <-
       e2 \f -> do
         (liftST $ Ref.read latest) >>= traverse_ (k <<< f)
+    pure (c1 *> c2)
+
+biSampleOn :: forall m s a b. MonadST s m => Applicative m => AnEvent m a -> AnEvent m (a -> b) -> AnEvent m b
+biSampleOn (AnEvent e1) (AnEvent e2) =
+  AnEvent \k -> do
+    latest1 <- liftST $ Ref.new Nothing
+    replay1 <- liftST $ STArray.new
+    latest2 <- liftST $ Ref.new Nothing
+    replay2 <- liftST $ STArray.new
+    -- First we capture the immediately emitted events
+    capturing <- liftST $ Ref.new true
+    c1 <-
+      e1 \a -> do
+        (liftST $ Ref.read capturing) >>=
+          if _
+            then liftST $ void $ STArray.push a replay1
+            else do
+              _ <- liftST $ Ref.write (Just a) latest1
+              (liftST $ Ref.read latest2) >>= traverse_ (\f -> k (f a))
+    c2 <-
+      e2 \f -> do
+        (liftST $ Ref.read capturing) >>=
+          if _
+            then liftST $ void $ STArray.push f replay2
+            else do
+              _ <- liftST $ Ref.write (Just f) latest2
+              (liftST $ Ref.read latest1) >>= traverse_ (\a -> k (f a))
+    -- And then we replay them according to the `Applicative Array` instance
+    _ <- liftST $ Ref.write false capturing
+    samples1 <- liftST $ STArray.freeze replay1
+    samples2 <- liftST $ STArray.freeze replay2
+    for_ samples1 \a -> do
+      -- We write the current values as we go through -- this would only matter for recursive events
+      _ <- liftST $ Ref.write (Just a) latest1
+      for_ samples2 \f -> do
+        _ <- liftST $ Ref.write (Just f) latest2
+        k (f a)
+    -- Free the samples so they can be GCed
+    _ <- liftST $ STArray.splice 0 (length samples1) [] replay1
+    _ <- liftST $ STArray.splice 0 (length samples2) [] replay2
     pure (c1 *> c2)
 
 -- | Flatten a nested `Event`, reporting values only from the most recent
@@ -222,12 +290,6 @@ create = do
           (liftST $ (Ref.read subscribers)) >>= traverse_ \k -> k a
     }
 
-bang :: forall m a. Applicative m => a -> AnEvent m a
-bang a =
-  AnEvent \k -> ado
-    k a
-    in pure unit
-
 -- | Creates an event bus within a closure.
 bus :: forall m s r a. MonadST s m => ((a -> m Unit) -> AnEvent m a -> r) -> AnEvent m r
 bus f = makeEvent \k -> do
@@ -277,7 +339,7 @@ memoize e f = makeEvent \k -> do
   k (f event)
   subscribe e push
 
--- | Makes an event hot, meaning that it will start firing on left-bind. This means that `bang` should never be used with `hot` as it will be lost. Use this for loops, for example.
+-- | Makes an event hot, meaning that it will start firing on left-bind. This means that `pure` should never be used with `hot` as it will be lost. Use this for loops, for example.
 hot :: forall m s a. MonadST s m => AnEvent m a -> m { event :: AnEvent m a, unsubscribe :: m Unit }
 hot e = do
   { event, push } <- create
