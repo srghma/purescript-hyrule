@@ -8,7 +8,7 @@ import Control.Monad.ST.Internal as RRef
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (execWriterT, tell)
 import Control.Plus (empty)
-import Data.Array (cons, snoc, replicate)
+import Data.Array (cons, replicate, snoc)
 import Data.Filterable (filter)
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
@@ -651,3 +651,12 @@ main = do
             a <- Ref.read rf
             _ <- unsafeBackdoor old backdoor
             shouldEqual a [ 3, 2, 1 ]
+        describe "Applicative" do
+          it "sequences" $ liftEffect do
+            eio <- Event.create
+            n <- Ref.new []
+            _ <- Event.subscribe (sequence [pure 1, pure 2, eio.event, pure 3]) \i -> Ref.modify_ (cons i) n
+            eio.push 2
+            eio.push 3
+            res <- Ref.read n
+            shouldEqual res [[1,2,3,3],[1,2,2,3]]
