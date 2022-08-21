@@ -1,45 +1,47 @@
 module FRP.Event
   ( AnEvent
-  , Event
   , AnEventIO
-  , EventIO
-  , backdoor
   , Backdoor(..)
-  , create
-  , CreateT
-  , Create(..)
-  , makeEvent
-  , MakeEventT
-  , MakeEvent(..)
-  , subscribe
-  , SubscribeT
-  , Subscribe(..)
-  , bus
-  , BusT
   , Bus(..)
-  , memoize
-  , MemoizeT
-  , Memoize(..)
-  , burning
-  , hot
-  , HotT
-  , Hot(..)
-  , mailboxed
-  , MailboxedT
-  , Mailboxed(..)
-  , delay
-  , DelayT
+  , BusT
+  , Create(..)
+  , CreateT
   , Delay(..)
-  , ToEvent
-  , toEvent
-  , FromEvent
+  , DelayT
+  , Event
+  , EventIO
+  , Hot(..)
+  , HotT
+  , Mailboxed(..)
+  , MailboxedT
+  , MakeEvent(..)
+  , MakeEventT
+  , Memoize(..)
+  , MemoizeT
+  , STEvent
+  , Subscribe(..)
+  , SubscribeT
+  , ZoraEvent
+  , backdoor
+  , burning
+  , bus
+  , create
+  , delay
   , fromEvent
+  , fromStEvent
+  , hot
+  , mailboxed
+  , makeEvent
+  , memoize
   , module Class
-  ) where
+  , subscribe
+  , toEvent
+  , toStEvent
+  )
+  where
 
 import Prelude
 
-import Data.Array as Array
 import Control.Alt ((<|>))
 import Control.Alternative (class Alt, class Alternative, class Plus)
 import Control.Apply (lift2)
@@ -48,6 +50,7 @@ import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
 import Data.Array (deleteBy, length)
+import Data.Array as Array
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
@@ -58,15 +61,14 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid.Action (class Action)
 import Data.Monoid.Additive (Additive(..))
-import Data.Monoid.Always (class Always, always)
-import Data.Monoid.Endo (Endo(..))
-import Data.Newtype (unwrap)
 import Data.Profunctor (dimap)
 import Data.Set (Set, singleton, delete)
 import Effect (Effect)
 import Effect.Ref as ERef
 import Effect.Timer (TimeoutId, clearTimeout, setTimeout)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOn, sampleOn_, withLast) as Class
+import Hyrule.Zora (Zora, liftImpure, liftPure, runImpure, runPure)
+import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 
 -- | An `Event` represents a collection of discrete occurrences with associated
@@ -84,6 +86,8 @@ newtype AnEvent m a = AnEvent ((a -> m Unit) -> m (m Unit))
 type Event a = AnEvent Effect a
 
 type STEvent a = AnEvent (ST Global) a
+
+type ZoraEvent = AnEvent Zora
 
 instance functorEvent :: Functor (AnEvent m) where
   map f (AnEvent e) = AnEvent \k -> e (k <<< f)
@@ -388,31 +392,17 @@ delay i = (\(Delay nt) -> nt) backdoor.delay i
 type DelayT = forall a. Int -> Event a -> Event a
 newtype Delay = Delay DelayT
 
-type ToEvent m a =
-  Always (Endo Function (Effect Unit)) (Endo Function (m Unit))
-  => Always (m (m Unit)) (Effect (Effect Unit))
-  => Applicative m
-  => a
+fromEvent :: Event ~> AnEvent Zora
+fromEvent (AnEvent e) = AnEvent $ dimap (map runImpure) (liftImpure <<< map liftImpure) e
 
-toEvent :: forall m. ToEvent m (AnEvent m ~> Event)
-toEvent (AnEvent i) = AnEvent $
-  dimap
-    (\f a -> unwrap (always (Endo (const (f a))) :: Endo Function (m Unit)) (pure unit))
-    (always :: m (m Unit) -> Effect (Effect Unit))
-    i
+fromStEvent :: STEvent ~> AnEvent Zora
+fromStEvent (AnEvent e) = AnEvent $ dimap (map (unsafeCoerce <<< runImpure)) (liftPure <<< map liftPure) e
 
-type FromEvent m a =
-  Always (m Unit) (Effect Unit)
-  => Always (Endo Function (Effect (Effect Unit))) (Endo Function (m (m Unit)))
-  => Applicative m
-  => a
+toEvent :: AnEvent Zora ~> Event
+toEvent (AnEvent e) = AnEvent $ dimap (map liftImpure) (runImpure <<< map runImpure) e
 
-fromEvent :: forall m. FromEvent m (Event ~> AnEvent m)
-fromEvent (AnEvent i) = AnEvent
-  $ dimap
-      (map always)
-      (\a -> unwrap (always (Endo (const a)) :: Endo Function (m (m Unit))) (pure (pure unit)))
-      i
+toStEvent :: AnEvent Zora ~> STEvent
+toStEvent (AnEvent e) = AnEvent $ dimap (map liftPure) (runPure <<< map runPure) e
 
 type Backdoor = { makeEvent :: MakeEvent
      , create :: Create
