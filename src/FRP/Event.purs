@@ -273,14 +273,21 @@ biSampleOn (Event e1) (Event e2) =
 keepLatest :: forall a. Event (Event a) -> Event a
 keepLatest (Event e) =
   Event $ mkEffectFn2 \tf k -> do
+    safeToIgnore <- Ref.new false
     cancelInner <- Ref.new (pure unit)
     cancelOuter <-
       runEffectFn2 e tf $ mkEffectFn1 \(Event inner) -> do
-        ci <- Ref.read cancelInner
-        ci
-        c <- runEffectFn2 inner tf k
-        Ref.write c cancelInner
+        -- in rare cases, cancelOuter may itself provoke an emission
+        -- of the outer event, in which case this function would run
+        -- to avoid that, we use a `safeToIgnore` flag
+        sti <- Ref.read safeToIgnore
+        unless sti do
+          ci <- Ref.read cancelInner
+          ci
+          c <- runEffectFn2 inner tf k
+          Ref.write c cancelInner
     pure do
+      Ref.write true safeToIgnore
       ci <- Ref.read cancelInner
       ci
       cancelOuter
