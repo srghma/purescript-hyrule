@@ -45,12 +45,10 @@ import Data.Tuple (Tuple(..), snd)
 -- | inputs.
 -- | - `bang`: A one-shot event that happens NOW.
 class (Alternative event, Filterable event) <= IsEvent event where
-  -- Temporal order for fold
-  fold :: forall a b. (b -> a -> b) -> b -> event a -> event b
   keepLatest :: forall a. event (event a) -> event a
   sampleOnRight :: forall a b. event a -> event (a -> b) -> event b
   sampleOnLeft :: forall a b. event a -> event (a -> b) -> event b
-  fix :: forall i o. (event i -> { input :: event i, output :: event o }) -> event o
+  fix :: forall i. (event i -> event i) -> event i
 
 infixl 4 sampleOnRight as <|**>
 infixl 4 sampleOnLeft as <**|>
@@ -128,3 +126,8 @@ gateBy f sampled sampler = compact $
   (\p x -> if f p x then Just x else Nothing)
   <$> (pure Nothing <|> Just <$> sampled)
   <|*> sampler
+
+-- | Fold over values received from some `Event`, creating a new `Event`.
+fold :: forall event a b. IsEvent event => (b -> a -> b) -> b -> event a -> event b
+fold f b e = fix \i -> sampleOnRight (i <|> pure b) ((flip f) <$> e)
+

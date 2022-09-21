@@ -152,7 +152,6 @@ instance applicativeEvent :: Applicative Event where
 instance alternativeEvent :: Alternative Event
 
 instance eventIsEvent :: Class.IsEvent Event where
-  fold = fold
   keepLatest = keepLatest
   sampleOnRight = sampleOnRight
   sampleOnLeft = sampleOnLeft
@@ -181,18 +180,6 @@ instance semiringEvent :: (Semiring a) => Semiring (Event a) where
 
 instance ringEvent :: (Ring a) => Ring (Event a) where
   sub = lift2 sub
-
-fold :: forall a b. (b -> a -> b) -> b -> Event a -> Event b
-fold f b (Event e) =
-  Event
-    ( mkEffectFn2 \tf k -> do
-        result <- (Ref.new b)
-        runEffectFn2 e tf
-          ( mkEffectFn1 \a -> do
-              res <- Ref.modify (flip f a) result
-              runEffectFn1 k res
-          )
-    )
 
 -- | Create an `Event` which only fires when a predicate holds.
 filter :: forall a b. (a -> Maybe b) -> Event a -> Event b
@@ -305,13 +292,14 @@ keepLatest (Event e) =
       cancelOuter
 
 -- | Compute a fixed point
-fix :: forall i o. (Event i -> { input :: Event i, output :: Event o }) -> Event o
+fix :: forall i. (Event i -> Event i) -> Event i
 fix f =
   Event $ mkEffectFn2 \tf k -> do
     { event, push } <- create'
-    let { input: Event input, output: Event output } = f event
-    c1 <- runEffectFn2 input tf push
-    c2 <- runEffectFn2 output tf k
+    let Event e0 = f event
+    let Event e1 = event
+    c1 <- runEffectFn2 e0 tf push
+    c2 <- runEffectFn2 e1 tf k
     pure do
       c1
       c2
