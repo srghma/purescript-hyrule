@@ -70,7 +70,7 @@ import Effect.Ref as ERef
 import Effect.Ref as Ref
 import Effect.Timer (TimeoutId, clearTimeout, setTimeout)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
-import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOn, sampleOn_, withLast) as Class
+import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 
@@ -154,7 +154,8 @@ instance alternativeEvent :: Alternative Event
 instance eventIsEvent :: Class.IsEvent Event where
   fold = fold
   keepLatest = keepLatest
-  sampleOn = sampleOn
+  sampleOnRight = sampleOnRight
+  sampleOnLeft = sampleOnLeft
   fix = fix
 
 instance semigroupEvent :: (Semigroup a) => Semigroup (Event a) where
@@ -177,18 +178,18 @@ instance semiringEvent :: (Semiring a) => Semiring (Event a) where
   add = lift2 add
   mul = lift2 mul
 
+
 instance ringEvent :: (Ring a) => Ring (Event a) where
   sub = lift2 sub
 
--- | Fold over values received from some `Event`, creating a new `Event`.
-fold :: forall a b. (a -> b -> b) -> Event a -> b -> Event b
-fold f (Event e) b =
+fold :: forall a b. (b -> a -> b) -> b -> Event a -> Event b
+fold f b (Event e) =
   Event
     ( mkEffectFn2 \tf k -> do
         result <- (Ref.new b)
         runEffectFn2 e tf
           ( mkEffectFn1 \a -> do
-              res <- Ref.modify (f a) result
+              res <- Ref.modify (flip f a) result
               runEffectFn1 k res
           )
     )
@@ -205,10 +206,26 @@ filter p (Event e) =
           )
     )
 
+
+sampleOnLeft :: forall a b. Event a -> Event (a -> b) -> Event b
+sampleOnLeft (Event e1) (Event e2) =
+  Event $ mkEffectFn2 \b k -> do
+    latest <- Ref.new Nothing
+    c1 <-
+      runEffectFn2 e1 b $ mkEffectFn1 \a -> do
+        o <- Ref.read latest
+        for_ o (\f -> runEffectFn1 k (f a))
+    c2 <-
+      runEffectFn2 e2 b $ mkEffectFn1 \f -> do
+        Ref.write (Just f) latest
+    pure do
+      c1
+      c2
+
 -- | Create an `Event` which samples the latest values from the first event
 -- | at the times when the second event fires.
-sampleOn :: forall a b. Event a -> Event (a -> b) -> Event b
-sampleOn (Event e1) (Event e2) =
+sampleOnRight :: forall a b. Event a -> Event (a -> b) -> Event b
+sampleOnRight (Event e1) (Event e2) =
   Event $ mkEffectFn2 \b k -> do
     latest <- Ref.new Nothing
     c1 <-
