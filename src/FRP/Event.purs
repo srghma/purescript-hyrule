@@ -298,8 +298,8 @@ fix f =
     { event, push } <- create'
     let Event e0 = f event
     let Event e1 = event
-    c1 <- runEffectFn2 e0 tf push
     c2 <- runEffectFn2 e1 tf k
+    c1 <- runEffectFn2 e0 tf push
     pure do
       c1
       c2
