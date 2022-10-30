@@ -27,10 +27,15 @@ module FRP.Event
   , Memoize(..)
   , MemoizeT
   , PureEventIO
+  , Subscriber(..)
   , Subscribe(..)
+  , SubscribeT
   , SubscribePure(..)
   , SubscribePureT
-  , SubscribeT
+  , SubscribeO(..)
+  , SubscribeOT
+  , SubscribePureO(..)
+  , SubscribePureOT
   , backdoor
   , burning
   , bus
@@ -47,9 +52,10 @@ module FRP.Event
   , memoize
   , module Class
   , subscribe
+  , subscribeO
   , subscribePure
-  )
-  where
+  , subscribePureO
+  ) where
 
 import Prelude
 
@@ -322,6 +328,27 @@ type SubscribeT =
 
 newtype Subscribe = Subscribe SubscribeT
 
+-- | Subscribe to an `Event` by providing a callback.
+-- |
+-- | `subscribe` returns a canceller function.
+subscribeO :: SubscribeOT
+subscribeO = (\(SubscribeO nt) -> nt) backdoor.subscribeO
+
+type SubscribeOT =
+  forall a
+   . EffectFn2 (Event a) (EffectFn1 a Unit) (Effect Unit)
+
+newtype SubscribeO = SubscribeO SubscribeOT
+
+subscribePureO :: SubscribePureOT
+subscribePureO = (\(SubscribePureO nt) -> nt) backdoor.subscribePureO
+
+type SubscribePureOT =
+  forall a
+   . STFn2 (Event a) (STFn1 a Global Unit) Global (ST Global Unit)
+
+newtype SubscribePureO = SubscribePureO SubscribePureOT
+
 subscribePure :: SubscribePureT
 subscribePure i = (\(SubscribePure nt) -> nt) backdoor.subscribePure i
 
@@ -386,9 +413,11 @@ newtype MakeLemmingEvent = MakeLemmingEvent MakeLemmingEventT
 makeLemmingEvent :: MakeLemmingEventT
 makeLemmingEvent i = (\(MakeLemmingEvent nt) -> nt) backdoor.makeLemmingEvent i
 
+newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
+
 type MakeLemmingEventOT =
   forall a
-   . ((forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit)) -> STFn1 (STFn1 a Global Unit) Global (ST Global Unit))
+   . STFn2 Subscriber (STFn1 a Global Unit) Global (ST Global Unit)
   -> Event a
 
 newtype MakeLemmingEventO = MakeLemmingEventO MakeLemmingEventOT
@@ -541,7 +570,9 @@ type Backdoor =
   , create :: Create
   , createPure :: CreatePure
   , subscribe :: Subscribe
+  , subscribeO :: SubscribeO
   , subscribePure :: SubscribePure
+  , subscribePureO :: SubscribePureO
   , bus :: Bus
   , memoize :: Memoize
   , hot :: Hot
@@ -633,13 +664,13 @@ backdoor = do
               stPusherToEffectPusher :: forall r a. STFn1 a r Unit -> EffectFn1 a Unit
               stPusherToEffectPusher = unsafeCoerce
 
-              stEventToEvent :: forall r a. (STFn1 (STFn1 a r Unit) r (ST r Unit)) -> EffectFn1 (EffectFn1 a Unit) (Effect Unit)
+              stEventToEvent :: forall r a. (STFn2 Subscriber (STFn1 a r Unit) r (ST r Unit)) -> EffectFn2 Subscriber (EffectFn1 a Unit) (Effect Unit)
               stEventToEvent = unsafeCoerce
 
               o :: forall r a. STFn2 (Event a) (STFn1 a r Unit) r (ST r Unit)
               o = mkSTFn2 \(Event ev) kx -> effectfulUnsubscribeToSTUnsubscribe $ runEffectFn2 ev tf (stPusherToEffectPusher kx)
 
-            runEffectFn1 (stEventToEvent (e o)) k
+            runEffectFn2 (stEventToEvent e) (Subscriber o) k
       in
         makeLemmingEventO_
   , create: create_
@@ -650,6 +681,25 @@ backdoor = do
         subscribe_ = Subscribe \(Event e) k -> runEffectFn2 e false (mkEffectFn1 k)
       in
         subscribe_
+  , subscribeO:
+      let
+        subscribeO_ :: SubscribeO
+        subscribeO_ = SubscribeO (mkEffectFn2 \(Event e) k -> runEffectFn2 e false k)
+      in
+        subscribeO_
+  , subscribePureO:
+      let
+        subscribePureO_ :: SubscribePureO
+        subscribePureO_ = SubscribePureO (mkSTFn2 \(Event e) k -> effectfulUnsubscribeToSTUnsubscribe (runEffectFn2 e true (stPusherToEffectPusher k)))
+          where
+          effectfulUnsubscribeToSTUnsubscribe :: forall r. Effect (Effect Unit) -> ST r (ST r Unit)
+          effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
+
+          stPusherToEffectPusher :: forall r a. (STFn1 a r Unit) -> EffectFn1 a Unit
+          stPusherToEffectPusher = unsafeCoerce
+
+      in
+        subscribePureO_
   , subscribePure:
       let
         subscribePure_ :: SubscribePure

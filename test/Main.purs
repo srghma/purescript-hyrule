@@ -8,7 +8,7 @@ import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global, toEffect)
 import Control.Monad.ST.Ref (STRef)
 import Control.Monad.ST.Ref as STRef
-import Control.Monad.ST.Uncurried (mkSTFn1, runSTFn2)
+import Control.Monad.ST.Uncurried (mkSTFn2, runSTFn2)
 import Control.Plus (empty)
 import Data.Array (length, replicate)
 import Data.Array as Array
@@ -23,9 +23,10 @@ import Effect (Effect)
 import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
+import Effect.Uncurried (mkEffectFn1, runEffectFn2)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (ABehavior, Behavior, behavior, gate)
-import FRP.Event (Backdoor, Event, EventIO, MakeEvent(..), backdoor, hot, keepLatest, mailboxed, makeEvent, makePureEvent, memoize, sampleOnRight, subscribe)
+import FRP.Event (Backdoor, Event, EventIO, MakeEvent(..), Subscriber(..), backdoor, hot, keepLatest, mailboxed, makeEvent, makePureEvent, memoize, sampleOnRight, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold)
 import FRP.Event.Time (debounce, interval)
@@ -527,8 +528,8 @@ main = do
             it "follows like an optimized lemming" $ liftEffect do
               ev :: EventIO Int <- Event.create
               rf <- Ref.new []
-              let e0 = Event.makeLemmingEventO \s -> mkSTFn1 \k -> runSTFn2 s ev.event k
-              _ <- Event.subscribe e0 \i -> Ref.modify_ (Array.cons i) rf
+              let e0 = Event.makeLemmingEventO (mkSTFn2 \(Subscriber s) k -> runSTFn2 s ev.event k)
+              _ <- runEffectFn2 Event.subscribeO e0 (mkEffectFn1 \i -> Ref.modify_ (Array.cons i) rf)
               ev.push 1
               ev.push 2
               ev.push 3
