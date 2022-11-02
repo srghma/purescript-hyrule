@@ -3,13 +3,16 @@ module FRP.Event
   , Bus(..)
   , BusT
   , Create(..)
+  , CreateT
+  , CreateO(..)
+  , CreateOT
   , CreatePure(..)
   , CreatePureT
-  , CreateT
   , Delay(..)
   , DelayT
   , Event
   , EventIO
+  , EventIO'
   , Hot(..)
   , HotT
   , Mailboxed(..)
@@ -40,6 +43,7 @@ module FRP.Event
   , burning
   , bus
   , create
+  , createO
   , createPure
   , delay
   , hot
@@ -492,6 +496,17 @@ type CreatePureT =
 
 newtype CreatePure = CreatePure CreatePureT
 
+type CreateOT =
+  forall a
+   . Effect (EventIO' a)
+
+newtype CreateO = CreateO CreateOT
+
+createO :: CreateOT
+createO = do
+  pure unit
+  (\(CreateO nt) -> nt) backdoor.createO
+
 -- | Creates an event bus within a closure.
 bus :: BusT
 bus i = (\(Bus nt) -> nt) backdoor.bus i
@@ -568,6 +583,7 @@ type Backdoor =
   , makeLemmingEvent :: MakeLemmingEvent
   , makeLemmingEventO :: MakeLemmingEventO
   , create :: Create
+  , createO :: CreateO
   , createPure :: CreatePure
   , subscribe :: Subscribe
   , subscribeO :: SubscribeO
@@ -604,7 +620,8 @@ backdoor = do
                 k <- Ref.read rk
                 runEffectFn1 k a
         }
-  { makeEvent:
+  { createO: CreateO create'
+  , makeEvent:
       let
         makeEvent_ :: MakeEvent
         makeEvent_ = MakeEvent
