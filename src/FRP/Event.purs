@@ -8,6 +8,8 @@ module FRP.Event
   , CreateOT
   , CreatePure(..)
   , CreatePureT
+  , CreatePureO(..)
+  , CreatePureOT
   , Delay(..)
   , DelayT
   , Event
@@ -30,6 +32,7 @@ module FRP.Event
   , Memoize(..)
   , MemoizeT
   , PureEventIO
+  , PureEventIO'
   , Subscriber(..)
   , Subscribe(..)
   , SubscribeT
@@ -45,6 +48,7 @@ module FRP.Event
   , create
   , createO
   , createPure
+  , createPureO
   , delay
   , hot
   , mailboxed
@@ -489,11 +493,27 @@ type PureEventIO r a =
   , push :: a -> ST r Unit
   }
 
+type PureEventIO' r a =
+  { event :: Event a
+  , push :: STFn1 a r Unit
+  }
+
 type CreatePureT =
   forall a r
    . ST r (PureEventIO r a)
 
 newtype CreatePure = CreatePure CreatePureT
+
+type CreatePureOT =
+  forall a r
+   . ST r (PureEventIO' r a)
+
+newtype CreatePureO = CreatePureO CreatePureOT
+
+createPureO :: CreatePureOT
+createPureO = do
+  pure unit
+  (\(CreatePureO nt) -> nt) backdoor.createPureO
 
 type CreateOT =
   forall a
@@ -584,6 +604,7 @@ type Backdoor =
   , create :: Create
   , createO :: CreateO
   , createPure :: CreatePure
+  , createPureO :: CreatePureO
   , subscribe :: Subscribe
   , subscribeO :: SubscribeO
   , subscribePure :: SubscribePure
@@ -691,6 +712,7 @@ backdoor = do
         makeLemmingEventO_
   , create: create_
   , createPure: (unsafeCoerce :: Create -> CreatePure) create_
+  , createPureO: (unsafeCoerce :: CreateO -> CreatePureO) (CreateO create')
   , subscribe:
       let
         subscribe_ :: Subscribe
