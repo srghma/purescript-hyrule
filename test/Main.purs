@@ -203,6 +203,7 @@ main = do
             let
               x :: Array (Tuple Int Int)
               x = Tuple <$> (pure 1 <|> pure 2) <*> (pure 3 <|> pure 4)
+
               e :: Event (Tuple Int Int)
               e = Tuple <$> (pure 1 <|> pure 2) <*> (pure 3 <|> pure 4)
             r <- toEffect $ STRef.new []
@@ -342,6 +343,28 @@ main = do
               r <- toEffect $ STRef.new []
               e <- Event.create
               u <- Event.subscribe (keepLatest $ mailboxed e.event \f -> f 3 <|> f 4) \i ->
+                liftST $ void $ STRef.modify (Array.cons i) r
+              do
+                e.push { address: 42, payload: true }
+                e.push { address: 43, payload: true }
+                e.push { address: 44, payload: true }
+                e.push { address: 3, payload: true } --
+                e.push { address: 42, payload: false }
+                e.push { address: 43, payload: true }
+                e.push { address: 43, payload: false }
+                e.push { address: 4, payload: false } --
+                e.push { address: 42, payload: false }
+                e.push { address: 43, payload: true }
+                e.push { address: 3, payload: false } --
+                e.push { address: 101, payload: true }
+              o <- toEffect $ STRef.read r
+              o `shouldEqual` [ false, false, true ]
+              u
+          describe "Mailbox" do
+            it "should work" $ liftEffect do
+              r <- toEffect $ STRef.new []
+              e <- Event.mailbox
+              u <- Event.subscribe (e.event 3 <|> e.event 4) \i ->
                 liftST $ void $ STRef.modify (Array.cons i) r
               do
                 e.push { address: 42, payload: true }
@@ -511,7 +534,6 @@ main = do
               a <- Ref.read rf
               _ <- unsafeBackdoor old backdoor
               shouldEqual a [ 3, 2, 1 ]
-
 
           describe "Lemming" do
             it "follows like a lemming" $ liftEffect do
