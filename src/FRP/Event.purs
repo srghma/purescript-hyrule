@@ -1,50 +1,48 @@
 module FRP.Event
-  ( Backdoor(..)
-  , Bus(..)
-  , BusT
-  , Create(..)
-  , CreateO(..)
-  , CreateOT
-  , CreatePure(..)
-  , CreatePureO(..)
-  , CreatePureOT
-  , CreatePureT
-  , CreateT
-  , Delay(..)
-  , DelayT
-  , Event
+  ( -- Bus(..)
+  -- , BusT
+  -- , Create(..)
+  -- , CreateO(..)
+  -- , CreateOT
+  -- , CreatePure(..)
+  -- , CreatePureO(..)
+  -- , CreatePureOT
+  -- , CreatePureT
+  -- , CreateT
+  -- , Delay(..)
+  -- , DelayT
+  Event
   , EventIO
   , EventIO'
-  , Hot(..)
-  , HotT
-  , Mailbox(..)
-  , MailboxT
-  , Mailboxed(..)
-  , MailboxedT
-  , MakeEvent(..)
-  , MakeEventO(..)
-  , MakeEventOT
-  , MakeEventT
-  , MakeLemmingEvent(..)
-  , MakeLemmingEventO(..)
-  , MakeLemmingEventOT
-  , MakeLemmingEventT
-  , MakePureEvent(..)
-  , MakePureEventT
-  , Memoize(..)
-  , MemoizeT
+  -- , Hot(..)
+  -- , HotT
+  -- , Mailbox(..)
+  -- , MailboxT
+  -- , Mailboxed(..)
+  -- , MailboxedT
+  -- , MakeEvent(..)
+  -- , MakeEventO(..)
+  -- , MakeEventOT
+  -- , MakeEventT
+  -- , MakeLemmingEvent(..)
+  -- , MakeLemmingEventO(..)
+  -- , MakeLemmingEventOT
+  -- , MakeLemmingEventT
+  -- , MakePureEvent(..)
+  -- , MakePureEventT
+  -- , Memoize(..)
+  -- , MemoizeT
   , PureEventIO
   , PureEventIO'
-  , Subscribe(..)
-  , SubscribeO(..)
-  , SubscribeOT
-  , SubscribePure(..)
-  , SubscribePureO(..)
-  , SubscribePureOT
-  , SubscribePureT
-  , SubscribeT
+  -- , Subscribe(..)
+  -- , SubscribeO(..)
+  -- , SubscribeOT
+  -- , SubscribePure(..)
+  -- , SubscribePureO(..)
+  -- , SubscribePureOT
+  -- , SubscribePureT
+  -- , SubscribeT
   , Subscriber(..)
-  , backdoor
   , burning
   , bus
   , merge
@@ -171,8 +169,8 @@ merge f = Event $ mkEffectFn2 \tf k -> do
     u <- runEffectFn2 i tf k
     void $ liftST $ STArray.push u a
   pure do
-      o <- liftST (STArray.freeze a)
-      runEffectFn1 fastForeachThunk o
+    o <- liftST (STArray.freeze a)
+    runEffectFn1 fastForeachThunk o
 
 instance plusEvent :: Plus Event where
   empty = Event (mkEffectFn2 \_ _ -> pure (pure unit))
@@ -341,113 +339,120 @@ fix f =
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
-subscribe :: SubscribeT
-subscribe i = (\(Subscribe nt) -> nt) backdoor.subscribe i
-
-type SubscribeT =
-  forall a
+subscribe
+  :: forall a
    . Event a
   -> (a -> Effect Unit)
   -> Effect (Effect Unit)
-
-newtype Subscribe = Subscribe SubscribeT
+subscribe (Event e) k = runEffectFn2 e false (mkEffectFn1 k)
 
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
-subscribeO :: SubscribeOT
-subscribeO = (\(SubscribeO nt) -> nt) backdoor.subscribeO
-
-type SubscribeOT =
-  forall a
+subscribeO
+  :: forall a
    . EffectFn2 (Event a) (EffectFn1 a Unit) (Effect Unit)
+subscribeO = mkEffectFn2 \(Event e) k -> runEffectFn2 e false k
 
-newtype SubscribeO = SubscribeO SubscribeOT
-
-subscribePureO :: SubscribePureOT
-subscribePureO = (\(SubscribePureO nt) -> nt) backdoor.subscribePureO
-
-type SubscribePureOT =
-  forall a r
+subscribePureO
+  :: forall a r
    . STFn2 (Event a) (STFn1 a r Unit) r (ST r Unit)
+subscribePureO = mkSTFn2 \(Event e) k -> effectfulUnsubscribeToSTUnsubscribe (runEffectFn2 e true (stPusherToEffectPusher k))
+  where
+  effectfulUnsubscribeToSTUnsubscribe :: forall rr. Effect (Effect Unit) -> ST rr (ST rr Unit)
+  effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
 
-newtype SubscribePureO = SubscribePureO SubscribePureOT
+  stPusherToEffectPusher :: forall rr aa. (STFn1 a rr Unit) -> EffectFn1 aa Unit
+  stPusherToEffectPusher = unsafeCoerce
 
-subscribePure :: SubscribePureT
-subscribePure i = (\(SubscribePure nt) -> nt) backdoor.subscribePure i
-
-type SubscribePureT =
-  forall r a
+subscribePure
+  :: forall r a
    . Event a
   -> (a -> ST r Unit)
   -> ST r (ST r Unit)
+subscribePure (Event e) k = effectfulUnsubscribeToSTUnsubscribe (runEffectFn2 e true (mkEffectFn1 (stPusherToEffectPusher k)))
+  where
+  effectfulUnsubscribeToSTUnsubscribe :: forall rr. Effect (Effect Unit) -> ST rr (ST rr Unit)
+  effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
 
-newtype SubscribePure = SubscribePure SubscribePureT
-
-type MakeEventT =
-  forall a
-   . ((a -> Effect Unit) -> Effect (Effect Unit))
-  -> Event a
-
-newtype MakeEvent = MakeEvent MakeEventT
+  stPusherToEffectPusher :: forall rr aa. (aa -> ST rr Unit) -> aa -> Effect Unit
+  stPusherToEffectPusher = unsafeCoerce
 
 -- | Make an `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.
 -- |
 -- | Note: you probably want to use `create` instead, unless you need explicit
 -- | control over unsubscription.
-makeEvent :: MakeEventT
-makeEvent i = (\(MakeEvent nt) -> nt) backdoor.makeEvent i
-
---
-type MakePureEventT =
-  forall a r
-   . ((a -> ST r Unit) -> ST r (ST r Unit))
+makeEvent
+  :: forall a
+   . ((a -> Effect Unit) -> Effect (Effect Unit))
   -> Event a
-
-newtype MakePureEvent = MakePureEvent MakePureEventT
+makeEvent e = Event $ mkEffectFn2 \tf k ->
+  if tf then pure (pure unit) else e (\a -> runEffectFn1 k a)
 
 -- | Make a pure `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.
 -- |
 -- | Note: you probably want to use `create` instead, unless you need explicit
 -- | control over unsubscription.
-makePureEvent :: MakePureEventT
-makePureEvent i = (\(MakePureEvent nt) -> nt) backdoor.makePureEvent i
+makePureEvent
+  :: forall a r
+   . ((a -> ST r Unit) -> ST r (ST r Unit))
+  -> Event a
+makePureEvent e = Event $ mkEffectFn2 \_ k -> do
+  let
+    stEventToEvent :: forall rr aa. ((aa -> ST rr Unit) -> ST rr (ST rr Unit)) -> (aa -> Effect Unit) -> Effect (Effect Unit)
+    stEventToEvent = unsafeCoerce
+  stEventToEvent e (\a -> runEffectFn1 k a)
 
---
-type MakeEventOT =
-  forall a
+makeEventO
+  :: forall a
    . EffectFn1 (EffectFn1 a Unit) (Effect Unit)
   -> Event a
+makeEventO e = Event $ mkEffectFn2 \tf k ->
+  if tf then pure (pure unit) else runEffectFn1 e k
 
-newtype MakeEventO = MakeEventO MakeEventOT
-
-makeEventO :: MakeEventOT
-makeEventO i = (\(MakeEventO nt) -> nt) backdoor.makeEventO i
-
---
-type MakeLemmingEventT =
-  forall a r
+makeLemmingEvent
+  :: forall a r
    . ((forall b. Event b -> (b -> ST r Unit) -> ST r (ST r Unit)) -> (a -> ST r Unit) -> ST r (ST r Unit))
   -> Event a
+makeLemmingEvent e = Event $ mkEffectFn2 \tf k -> do
+  let
+    effectfulUnsubscribeToSTUnsubscribe :: forall rr. Effect (Effect Unit) -> ST rr (ST rr Unit)
+    effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
 
-newtype MakeLemmingEvent = MakeLemmingEvent MakeLemmingEventT
+    stPusherToEffectPusher :: forall rr aa. (aa -> ST rr Unit) -> aa -> Effect Unit
+    stPusherToEffectPusher = unsafeCoerce
 
-makeLemmingEvent :: MakeLemmingEventT
-makeLemmingEvent i = (\(MakeLemmingEvent nt) -> nt) backdoor.makeLemmingEvent i
+    stEventToEvent :: forall rr aa. ((aa -> ST rr Unit) -> ST rr (ST rr Unit)) -> (aa -> Effect Unit) -> Effect (Effect Unit)
+    stEventToEvent = unsafeCoerce
+
+    o :: forall rr aa. Event aa -> (aa -> ST rr Unit) -> ST rr (ST rr Unit)
+    o (Event ev) kx = effectfulUnsubscribeToSTUnsubscribe $ runEffectFn2 ev tf (mkEffectFn1 (stPusherToEffectPusher kx))
+
+  stEventToEvent (e o) (\a -> runEffectFn1 k a)
 
 newtype Subscriber = Subscriber (forall b r. STFn2 (Event b) (STFn1 b r Unit) r (ST r Unit))
 
-type MakeLemmingEventOT =
-  forall a r
+makeLemmingEventO
+  :: forall a r
    . STFn2 Subscriber (STFn1 a r Unit) r (ST r Unit)
   -> Event a
+makeLemmingEventO e = Event $ mkEffectFn2 \tf k -> do
+  let
+    effectfulUnsubscribeToSTUnsubscribe :: forall rr. Effect (Effect Unit) -> ST rr (ST rr Unit)
+    effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
 
-newtype MakeLemmingEventO = MakeLemmingEventO MakeLemmingEventOT
+    stPusherToEffectPusher :: forall rr aa. STFn1 aa rr Unit -> EffectFn1 aa Unit
+    stPusherToEffectPusher = unsafeCoerce
 
-makeLemmingEventO :: MakeLemmingEventOT
-makeLemmingEventO i = (\(MakeLemmingEventO nt) -> nt) backdoor.makeLemmingEventO i
+    stEventToEvent :: forall rr aa. (STFn2 Subscriber (STFn1 aa rr Unit) rr (ST rr Unit)) -> EffectFn2 Subscriber (EffectFn1 aa Unit) (Effect Unit)
+    stEventToEvent = unsafeCoerce
+
+    o :: forall rr aa. STFn2 (Event aa) (STFn1 aa rr Unit) rr (ST rr Unit)
+    o = mkSTFn2 \(Event ev) kx -> effectfulUnsubscribeToSTUnsubscribe $ runEffectFn2 ev tf (stPusherToEffectPusher kx)
+
+  runEffectFn2 (stEventToEvent e) (Subscriber o) k
 
 type EventIO a =
   { event :: Event a
@@ -455,10 +460,8 @@ type EventIO a =
   }
 
 -- | Create an event and a function which supplies a value to that event.
-create :: CreateT
-create = do
-  pure unit
-  (\(Create nt) -> nt) backdoor.create
+create :: forall a. Effect (EventIO a)
+create = create_
 
 type EventIO' a =
   { event :: Event a
@@ -493,17 +496,35 @@ create' = do
             runEffectFn1 k a
     }
 
-type CreateT =
-  forall a
+create_
+  :: forall a
    . Effect (EventIO a)
-
-newtype Create = Create CreateT
+create_ = do
+  subscribers <- objHack
+  idx <- Ref.new 0
+  pure
+    { event:
+        Event $ mkEffectFn2 \_ k -> do
+          rk <- Ref.new k
+          ix <- Ref.read idx
+          runEffectFn3 insertObjHack ix rk subscribers
+          Ref.modify_ (_ + 1) idx
+          pure do
+            Ref.write mempty rk
+            runEffectFn2 deleteObjHack ix subscribers
+            pure unit
+    , push:
+        \a -> do
+          runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
+            k <- Ref.read rk
+            runEffectFn1 k a
+    }
 
 -- | Create an event and a function which supplies a value to that event in ST.
-createPure :: CreatePureT
-createPure = do
-  pure unit
-  (\(CreatePure nt) -> nt) backdoor.createPure
+createPure
+  :: forall a r
+   . ST r (PureEventIO r a)
+createPure = (unsafeCoerce :: Effect (EventIO a) -> ST r (PureEventIO r a)) create_
 
 type PureEventIO r a =
   { event :: Event a
@@ -515,48 +536,29 @@ type PureEventIO' r a =
   , push :: STFn1 a r Unit
   }
 
-type CreatePureT =
-  forall a r
-   . ST r (PureEventIO r a)
-
-newtype CreatePure = CreatePure CreatePureT
-
-type CreatePureOT =
-  forall a r
+createPureO
+  :: forall a r
    . ST r (PureEventIO' r a)
+createPureO = (unsafeCoerce :: Effect (EventIO' a) -> ST r (PureEventIO' r a)) create'
 
-newtype CreatePureO = CreatePureO CreatePureOT
-
-createPureO :: CreatePureOT
-createPureO = do
-  pure unit
-  (\(CreatePureO nt) -> nt) backdoor.createPureO
-
-type CreateOT =
-  forall a
+createO
+  :: forall a
    . Effect (EventIO' a)
-
-newtype CreateO = CreateO CreateOT
-
-createO :: CreateOT
-createO = do
-  pure unit
-  (\(CreateO nt) -> nt) backdoor.createO
+createO = create'
 
 -- | Creates an event bus within a closure.
-bus :: BusT
-bus i = (\(Bus nt) -> nt) backdoor.bus i
-
-type BusT = forall r a. ((a -> Effect Unit) -> Event a -> r) -> Event r
-newtype Bus = Bus BusT
+bus :: forall r a. ((a -> Effect Unit) -> Event a -> r) -> Event r
+bus f = Event $ mkEffectFn2 \_ k -> do
+  { push, event } <- create
+  runEffectFn1 k (f push event)
+  pure (pure unit)
 
 -- | Takes the entire domain of a and allows for ad-hoc specialization.
-mailboxed :: MailboxedT
-mailboxed i = (\(Mailboxed nt) -> nt) backdoor.mailboxed i
-
-type MailboxedT = forall r a b. Ord a => Event { address :: a, payload :: b } -> ((a -> Event b) -> r) -> Event r
-
-newtype Mailboxed = Mailboxed MailboxedT
+mailboxed :: forall r a b. Ord a => Event { address :: a, payload :: b } -> ((a -> Event b) -> r) -> Event r
+mailboxed (Event e) f = Event $ mkEffectFn2 \b k -> do
+  { push, event } <- mailbox'
+  runEffectFn1 k (f event)
+  runEffectFn2 e b push
 
 mailbox' :: forall a b. Ord a => Effect { push :: EffectFn1 { address :: a, payload :: b } Unit, event :: a -> Event b }
 mailbox' = do
@@ -588,35 +590,29 @@ mailbox' = do
           Just arr -> runEffectFn2 fastForeachE arr $ mkEffectFn1 \i -> runEffectFn1 i payload
     }
 
--- like mailbox, but in effect
-mailbox :: MailboxT
+mailbox :: forall a b. Ord a => Effect { push :: { address :: a, payload :: b } -> Effect Unit, event :: a -> Event b }
 mailbox = do
-  pure unit
-  (\(Mailbox nt) -> nt) backdoor.mailbox
-
-type MailboxT = forall a b. Ord a => Effect { push :: { address :: a, payload :: b } -> Effect Unit, event :: a -> Event b }
-
-newtype Mailbox = Mailbox MailboxT
+  { push, event } <- mailbox'
+  pure { event, push: \k -> runEffectFn1 push k }
 
 -- | Takes an event and memoizes it within a closure.
 -- | All interactions with the event in the closure will not trigger a fresh
 -- | subscription. Outside the closure does, however, trigger a fresh subscription.
-memoize :: MemoizeT
-memoize i = (\(Memoize nt) -> nt) backdoor.memoize i
-
-type MemoizeT = forall r a. Event a -> (Event a -> r) -> Event r
-newtype Memoize = Memoize MemoizeT
+memoize :: forall r a. Event a -> (Event a -> r) -> Event r
+memoize (Event e) f = Event $ mkEffectFn2 \b k -> do
+  { push, event } <- create'
+  runEffectFn1 k (f event)
+  runEffectFn2 e b push
 
 -- | Makes an event hot, meaning that it will start firing on left-bind. This means that `pure` should never be used with `hot` as it will be lost. Use this for loops, for example.
-hot :: HotT
-hot i = (\(Hot nt) -> nt) backdoor.hot i
-
-type HotT =
-  forall a
+hot
+  :: forall a
    . Event a
   -> Effect { event :: Event a, unsubscribe :: Effect Unit }
-
-newtype Hot = Hot HotT
+hot e = do
+  { event, push } <- create
+  unsubscribe <- subscribe e push
+  pure { event, unsubscribe }
 
 -- | Makes an event _burning_ hot. Like hot, it will start firing immediately on left bind. In addition, it _always_ fires _immediately_ upon subscription with the most recent value.
 burning
@@ -647,235 +643,21 @@ foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Un
 
 --
 
-delay :: DelayT
-delay i = (\(Delay nt) -> nt) backdoor.delay i
+delay :: forall a. Int -> Event a -> Event a
+delay n (Event e) = Event $ mkEffectFn2 \tf k -> do
+  tid <- ERef.new (mempty :: Set TimeoutId)
+  canceler <-
+    runEffectFn2 e tf $ mkEffectFn1 \a -> do
+      localId <- ERef.new Nothing
+      id <-
+        setTimeout n do
+          runEffectFn1 k a
+          lid <- ERef.read localId
+          maybe (pure unit) (\id -> ERef.modify_ (delete id) tid) lid
+      ERef.write (Just id) localId
+      ERef.modify_ (append (singleton id)) tid
+  pure do
+    ids <- ERef.read tid
+    for_ ids clearTimeout
+    canceler
 
-type DelayT = forall a. Int -> Event a -> Event a
-newtype Delay = Delay DelayT
-
-type Backdoor =
-  { makeEvent :: MakeEvent
-  , makeEventO :: MakeEventO
-  , makePureEvent :: MakePureEvent
-  , makeLemmingEvent :: MakeLemmingEvent
-  , makeLemmingEventO :: MakeLemmingEventO
-  , create :: Create
-  , createO :: CreateO
-  , createPure :: CreatePure
-  , createPureO :: CreatePureO
-  , subscribe :: Subscribe
-  , subscribeO :: SubscribeO
-  , subscribePure :: SubscribePure
-  , subscribePureO :: SubscribePureO
-  , bus :: Bus
-  , memoize :: Memoize
-  , hot :: Hot
-  , mailboxed :: Mailboxed
-  , mailbox :: Mailbox
-  , delay :: Delay
-  }
-
-backdoor :: Backdoor
-backdoor = do
-  let
-    create_ :: Create
-    create_ = Create do
-      subscribers <- objHack
-      idx <- Ref.new 0
-      pure
-        { event:
-            Event $ mkEffectFn2 \_ k -> do
-              rk <- Ref.new k
-              ix <- Ref.read idx
-              runEffectFn3 insertObjHack ix rk subscribers
-              Ref.modify_ (_ + 1) idx
-              pure do
-                Ref.write mempty rk
-                runEffectFn2 deleteObjHack ix subscribers
-                pure unit
-        , push:
-            \a -> do
-              runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
-                k <- Ref.read rk
-                runEffectFn1 k a
-        }
-  { createO: CreateO create'
-  , makeEvent:
-      let
-        makeEvent_ :: MakeEvent
-        makeEvent_ = MakeEvent
-          \e -> Event $ mkEffectFn2 \tf k ->
-            if tf then pure (pure unit) else e (\a -> runEffectFn1 k a)
-      in
-        makeEvent_
-  , makeEventO:
-      let
-        makeEventO_ :: MakeEventO
-        makeEventO_ = MakeEventO
-          \e -> Event $ mkEffectFn2 \tf k ->
-            if tf then pure (pure unit) else runEffectFn1 e k
-      in
-        makeEventO_
-  , makePureEvent:
-      let
-        makePureEvent_ :: MakePureEvent
-        makePureEvent_ = MakePureEvent
-          \e -> Event $ mkEffectFn2 \_ k -> do
-            let
-              stEventToEvent :: forall r a. ((a -> ST r Unit) -> ST r (ST r Unit)) -> (a -> Effect Unit) -> Effect (Effect Unit)
-              stEventToEvent = unsafeCoerce
-            stEventToEvent e (\a -> runEffectFn1 k a)
-      in
-        makePureEvent_
-  , makeLemmingEvent:
-      let
-        makeLemmingEvent_ :: MakeLemmingEvent
-        makeLemmingEvent_ = MakeLemmingEvent
-          \e -> Event $ mkEffectFn2 \tf k -> do
-            let
-              effectfulUnsubscribeToSTUnsubscribe :: forall r. Effect (Effect Unit) -> ST r (ST r Unit)
-              effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
-
-              stPusherToEffectPusher :: forall r a. (a -> ST r Unit) -> a -> Effect Unit
-              stPusherToEffectPusher = unsafeCoerce
-
-              stEventToEvent :: forall r a. ((a -> ST r Unit) -> ST r (ST r Unit)) -> (a -> Effect Unit) -> Effect (Effect Unit)
-              stEventToEvent = unsafeCoerce
-
-              o :: forall r a. Event a -> (a -> ST r Unit) -> ST r (ST r Unit)
-              o (Event ev) kx = effectfulUnsubscribeToSTUnsubscribe $ runEffectFn2 ev tf (mkEffectFn1 (stPusherToEffectPusher kx))
-
-            stEventToEvent (e o) (\a -> runEffectFn1 k a)
-      in
-        makeLemmingEvent_
-  , makeLemmingEventO:
-      let
-        makeLemmingEventO_ :: MakeLemmingEventO
-        makeLemmingEventO_ = MakeLemmingEventO
-          \e -> Event $ mkEffectFn2 \tf k -> do
-            let
-              effectfulUnsubscribeToSTUnsubscribe :: forall r. Effect (Effect Unit) -> ST r (ST r Unit)
-              effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
-
-              stPusherToEffectPusher :: forall r a. STFn1 a r Unit -> EffectFn1 a Unit
-              stPusherToEffectPusher = unsafeCoerce
-
-              stEventToEvent :: forall r a. (STFn2 Subscriber (STFn1 a r Unit) r (ST r Unit)) -> EffectFn2 Subscriber (EffectFn1 a Unit) (Effect Unit)
-              stEventToEvent = unsafeCoerce
-
-              o :: forall r a. STFn2 (Event a) (STFn1 a r Unit) r (ST r Unit)
-              o = mkSTFn2 \(Event ev) kx -> effectfulUnsubscribeToSTUnsubscribe $ runEffectFn2 ev tf (stPusherToEffectPusher kx)
-
-            runEffectFn2 (stEventToEvent e) (Subscriber o) k
-      in
-        makeLemmingEventO_
-  , create: create_
-  , createPure: (unsafeCoerce :: Create -> CreatePure) create_
-  , createPureO: (unsafeCoerce :: CreateO -> CreatePureO) (CreateO create')
-  , subscribe:
-      let
-        subscribe_ :: Subscribe
-        subscribe_ = Subscribe \(Event e) k -> runEffectFn2 e false (mkEffectFn1 k)
-      in
-        subscribe_
-  , subscribeO:
-      let
-        subscribeO_ :: SubscribeO
-        subscribeO_ = SubscribeO (mkEffectFn2 \(Event e) k -> runEffectFn2 e false k)
-      in
-        subscribeO_
-  , subscribePureO:
-      let
-        subscribePureO_ :: SubscribePureO
-        subscribePureO_ = SubscribePureO (mkSTFn2 \(Event e) k -> effectfulUnsubscribeToSTUnsubscribe (runEffectFn2 e true (stPusherToEffectPusher k)))
-          where
-          effectfulUnsubscribeToSTUnsubscribe :: forall r. Effect (Effect Unit) -> ST r (ST r Unit)
-          effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
-
-          stPusherToEffectPusher :: forall r a. (STFn1 a r Unit) -> EffectFn1 a Unit
-          stPusherToEffectPusher = unsafeCoerce
-
-      in
-        subscribePureO_
-  , subscribePure:
-      let
-        subscribePure_ :: SubscribePure
-        subscribePure_ = SubscribePure o
-          where
-          effectfulUnsubscribeToSTUnsubscribe :: forall r. Effect (Effect Unit) -> ST r (ST r Unit)
-          effectfulUnsubscribeToSTUnsubscribe = unsafeCoerce
-
-          stPusherToEffectPusher :: forall r a. (a -> ST r Unit) -> a -> Effect Unit
-          stPusherToEffectPusher = unsafeCoerce
-
-          o :: forall r a. Event a -> (a -> ST r Unit) -> ST r (ST r Unit)
-          o (Event e) k = effectfulUnsubscribeToSTUnsubscribe (runEffectFn2 e true (mkEffectFn1 (stPusherToEffectPusher k)))
-      in
-        subscribePure_
-  , bus:
-      let
-        bus_ :: Bus
-        bus_ = Bus \f -> Event $ mkEffectFn2 \_ k -> do
-          { push, event } <- create
-          runEffectFn1 k (f push event)
-          pure (pure unit)
-      in
-        bus_
-  , memoize:
-      let
-        memoize_ :: Memoize
-        memoize_ = Memoize \(Event e) f -> Event $ mkEffectFn2 \b k -> do
-          { push, event } <- create'
-          runEffectFn1 k (f event)
-          runEffectFn2 e b push
-      in
-        memoize_
-  , hot:
-      let
-        hot_ :: Hot
-        hot_ = Hot \e -> do
-          { event, push } <- create
-          unsubscribe <- subscribe e push
-          pure { event, unsubscribe }
-      in
-        hot_
-  , mailbox:
-      let
-        mailbox_ :: Mailbox
-        mailbox_ = Mailbox do
-          { push, event } <- mailbox'
-          pure { event, push: \k -> runEffectFn1 push k }
-      in
-        mailbox_
-  , mailboxed:
-      let
-        mailboxed_ :: Mailboxed
-        mailboxed_ = Mailboxed \(Event e) f -> Event $ mkEffectFn2 \b k -> do
-          { push, event } <- mailbox'
-          runEffectFn1 k (f event)
-          runEffectFn2 e b push
-      in
-        mailboxed_
-  , delay:
-      let
-        delay_ :: Delay
-        delay_ = Delay \n (Event e) ->
-          Event $ mkEffectFn2 \tf k -> do
-            tid <- ERef.new (mempty :: Set TimeoutId)
-            canceler <-
-              runEffectFn2 e tf $ mkEffectFn1 \a -> do
-                localId <- ERef.new Nothing
-                id <-
-                  setTimeout n do
-                    runEffectFn1 k a
-                    lid <- ERef.read localId
-                    maybe (pure unit) (\id -> ERef.modify_ (delete id) tid) lid
-                ERef.write (Just id) localId
-                ERef.modify_ (append (singleton id)) tid
-            pure do
-              ids <- ERef.read tid
-              for_ ids clearTimeout
-              canceler
-      in
-        delay_
-  }
