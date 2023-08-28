@@ -40,33 +40,32 @@ export const deleteObjHack = (k, o) => {
   return false;
 };
 
-export const fastForeachOhE = (o, f) => {
-  if (o.r) {
-    o.q.push(() => {
-      fastForeachOhE(o, f);
-    });
-    return;
-  }
-  o.r = true;
-  const M = {};
-  const run = (i) => {
-    o.m.push({});
-    for (const kv of Object.entries(o.m[i])) {
-      const k = kv[0];
-      const v = kv[1];
-      f(v);
-      if (Object.keys(o.m[i + 1]).length) run(i + 1);
-      o.m[i + 1] = {};
-      o.m.length = i + 1 + 1;
-      M[k] = v;
+export const fastForeachOhE = (o, ff) => {
+  let f = ff;
+  while (true) {
+    if (o.r) {
+      o.q.push(f) ;
+      return;
     }
-  };
-  run(0);
-  o.m.length = 0;
-  o.m.push(M);
-  let fn;
-  o.r = false;
-  while ((fn = o.q.shift())) {
-    fn();
+    o.r = true;
+    const M = {};
+    const run = (i) => {
+      o.m.push({});
+      for (const kv of Object.entries(o.m[i])) {
+        const k = kv[0];
+        const v = kv[1];
+        f(v);
+        if (Object.keys(o.m[i + 1]).length) run(i + 1);
+        o.m[i + 1] = {};
+        o.m.length = i + 1 + 1;
+        M[k] = v;
+      }
+    };
+    run(0);
+    o.m.length = 0;
+    o.m.push(M);
+    o.r = false;
+    f = o.q.shift();
+    if (f == undefined) { break; }
   }
 };
