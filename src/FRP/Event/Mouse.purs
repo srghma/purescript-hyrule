@@ -16,7 +16,7 @@ import Data.Newtype (wrap)
 import Data.Set as Set
 import Effect (Effect)
 import Effect.Ref as Ref
-import FRP.Event (Event, makeEvent, makeEventE, subscribe)
+import FRP.Event (Event, makeEventE)
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Window (toEventTarget)
@@ -89,20 +89,18 @@ up = makeEventE \k -> do
 withPosition
   :: forall a
    . Mouse
-  -> Event a
-  -> Event { value :: a, pos :: Maybe { x :: Int, y :: Int } }
-withPosition (Mouse { position }) e = makeEvent \k ->
-  e `subscribe` \value -> do
-    pos <- Ref.read position
-    k { value, pos }
+  -> ({ value :: a, pos :: Maybe { x :: Int, y :: Int } } -> Effect Unit)
+  -> a -> Effect Unit
+withPosition (Mouse { position }) f  value = do
+  pos <- Ref.read position
+  f { value, pos }
 
 -- | Create an event which also returns the current mouse buttons.
 withButtons
   :: forall a
    . Mouse
-  -> Event a
-  -> Event { value :: a, buttons :: Set.Set Int }
-withButtons (Mouse { buttons }) e = makeEvent \k ->
-  e `subscribe` \value -> do
-    buttonsValue <- Ref.read buttons
-    k { value, buttons: buttonsValue }
+  -> ({ value :: a, buttons :: Set.Set Int } -> Effect Unit)
+  -> a -> Effect Unit
+withButtons (Mouse { buttons }) f value = do
+  buttonsValue <- Ref.read buttons
+  f { value, buttons: buttonsValue }

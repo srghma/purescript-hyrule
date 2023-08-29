@@ -14,7 +14,7 @@ import Data.Newtype (wrap)
 import Data.Set as Set
 import Effect (Effect)
 import Effect.Ref as Ref
-import FRP.Event (Event, makeEvent, makeEventE, subscribe)
+import FRP.Event (Event, makeEventE)
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Window (toEventTarget)
@@ -80,9 +80,8 @@ up = makeEventE \k -> do
 withKeys
   :: forall a
    . Keyboard
-  -> Event a
-  -> Event { value :: a, keys :: Set.Set String }
-withKeys (Keyboard { keys }) e = makeEvent \k ->
-  e `subscribe` \value -> do
+  -> ({ value :: a, keys :: Set.Set String } -> Effect Unit)
+  ->  a -> Effect Unit
+withKeys (Keyboard { keys }) f  value = do
     keysValue <- Ref.read keys
-    k { value, keys: keysValue }
+    f { value, keys: keysValue }

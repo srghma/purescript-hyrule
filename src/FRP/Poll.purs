@@ -9,7 +9,6 @@ module FRP.Poll
   , derivative
   , derivative'
   , dredge
-  , effectToPoll
   , fixB
   , gate
   , gateBy
@@ -20,7 +19,6 @@ module FRP.Poll
   , mergeMap
   , poll
   , rant
-  , refToPoll
   , refize
   , sample
   , sampleBy
@@ -59,7 +57,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
 import Effect.Ref as Ref
-import FRP.Event (class IsEvent, Event, fold, makeEvent, makeLemmingEvent, subscribe, withLast)
+import FRP.Event (class IsEvent, Event, fold, makeEvent, subscribe, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (sampleOnRightOp)
@@ -387,22 +385,12 @@ animate scene render = do
 -- | Turn an ST Ref into a poll
 stRefToPoll :: STRef.STRef Global ~> Poll
 stRefToPoll r = do
-  poll \e -> makeLemmingEvent \s k -> s e \f -> (STRef.read r) >>= k <<< f
-
--- | Turn a Ref into a poll
-refToPoll :: Ref.Ref ~> Poll
-refToPoll r = do
-  poll \e -> makeEvent \k -> subscribe e \f -> Ref.read r >>= k <<< f
-
--- | Turn an Effect into a poll
-effectToPoll :: Effect ~> Poll
-effectToPoll ee = do
-  poll \e -> makeEvent \k -> subscribe e \f -> ee >>= k <<< f
+  poll \e -> makeEvent \s k -> s e \f -> pure <$> STRef.read r
 
 -- | Turn an ST Global into a poll
 stToPoll :: ST Global ~> Poll
 stToPoll ee = do
-  poll \e -> makeLemmingEvent \s k -> s e \f -> ee >>= k <<< f
+  poll \e -> makeEvent \s k -> s e \f -> ee >>= k <<< f
 
 filterMap
   :: forall event a b
@@ -477,7 +465,7 @@ createPure
   :: forall a
    . ST Global (PurePollIO a)
 createPure = do
-  { event, push } <- Event.createPure
+  { event, push } <- Event.create
   pure { poll: sham event, push }
 
 mailbox
@@ -493,18 +481,18 @@ rant
    . Poll a
   -> ST Global { poll :: Poll a, unsubscribe :: ST Global Unit }
 rant a = do
-  ep <- Event.createPure
+  ep <- Event.create
   started <- STRef.new false
   unsub <- STRef.new (pure unit)
   pure
     { unsubscribe: join (STRef.read unsub)
-    , poll: poll \e -> makeLemmingEvent \s k -> do
+    , poll: poll \e -> makeEvent \s -> do
         st <- STRef.read started
         when (not st) do
-          unsubscribe <- s (sample_ a (EClass.once e)) ep.push
+          unsubscribe <- s (sample_ a (EClass.once e)) (pure <<< pure)
           void $ STRef.write true started
           void $ flip STRef.write unsub unsubscribe
-        u3 <- s (sampleOnRightOp e ep.event) k
+        u3 <- s (sampleOnRightOp e ep.event) (pure <<< pure)
         pure do
           u3
     }
@@ -517,7 +505,7 @@ deflect a = do
   ep <- STRef.new []
   started <- STRef.new false
   unsub <- STRef.new (pure unit)
-  pure $ poll \e -> makeLemmingEvent \s k -> do
+  pure $ poll \e -> makeEvent \s -> do
     st <- STRef.read started
     when (not st) do
       unsubscribe <- s (sample_ a (EClass.once e))
@@ -527,7 +515,7 @@ deflect a = do
     u3 <- s e \f -> do
       join (STRef.read unsub)
       r <- STRef.read ep
-      for_ r (k <<< f)
+      pure $ map f r
     pure do
       u3
 
@@ -555,8 +543,8 @@ keepLatest a = APoll \e ->
     ]
 
 refize :: forall a. a -> Poll a -> Poll (Tuple (STRef.STRef Global a) a)
-refize a p = poll \e -> makeLemmingEvent \s k -> do
+refize a p = poll \e -> makeEvent \s -> do
   r <- STRef.new a
   s (sampleBy Tuple p e) \(Tuple p' e') -> do
     void $ STRef.write p' r
-    k $ e' (Tuple r p')
+    pure $ e' (Tuple r p')

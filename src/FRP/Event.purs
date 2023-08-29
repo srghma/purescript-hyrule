@@ -5,11 +5,7 @@ module FRP.Event
   , PureEventIO
   , PureEventIOO
   , Subscriber(..)
-  , Entangled
-  , handy
-  , sinister
-  , dexterious
-  , disentangle
+  , makeEventE
   , create
   , mailbox
   , mailbox'
@@ -39,15 +35,11 @@ import Data.Array (deleteBy)
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
-import Data.Exists (Exists, mkExists, runExists)
-import Data.Filterable (filterMap)
 import Data.Filterable as Filterable
 import Data.Foldable (for_)
 import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Profunctor (class Profunctor)
-import Data.Profunctor.Cochoice (class Cochoice)
 import Data.Tuple (Tuple(..))
 import Effect (Effect, foreachE)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, runEffectFn1, runEffectFn2)
@@ -268,7 +260,7 @@ keepLatest (Event e) =
 fix :: forall i. (Event i -> Event i) -> Event i
 fix f =
   Event $ mkSTFn2 \tf k -> do
-    { event, push } <- disentangle <$> create
+    { event, push } <- create
     let Event e0 = f event
     let Event e1 = event
     c2 <- runSTFn2 e1 tf k
@@ -332,48 +324,14 @@ makeEvent i = Event $ mkSTFn2 \tf k ->
 
 newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
 
-type EventIO i o =
-  { event :: Event o
-  , push :: i -> Effect Unit
+type EventIO a =
+  { event :: Event a
+  , push :: a -> Effect Unit
   }
 
-newtype EntangledF2 ii oo i o =
-  EntangledF2
-    { event :: Event o
-    , push :: i -> Effect Unit
-    , i :: ii -> Effect i
-    , o :: Event o -> Event oo
-    }
-
-newtype EntangledF1 ii oo i = EntangledF1 (Exists (EntangledF2 ii oo i))
-
-newtype Entangled i o = Entangled (Exists (EntangledF1 i o))
-
-instance Profunctor Entangled where
-  dimap f0 f1 (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: f0 >>> i, o: o >>> map f1 }) e) e1
-
-handy :: forall s t a b. (s -> Effect a) -> (Event b -> Event t) -> Entangled a b -> Entangled s t
-handy f0 f1 (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: f0 >=> i, o: o >>> f1 }) e) e1
-
-dexterious :: forall t a b. (Event b -> Event t) -> Entangled a b -> Entangled a t
-dexterious f1 (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: i, o: o >>> f1 }) e) e1
-
-sinister :: forall s a b. (s -> Effect a) -> Entangled a b -> Entangled s b
-sinister f0 (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: f0 >=> i, o: o }) e) e1
-
-instance Cochoice Entangled where
-  unright (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: Right >>> i, o: o >>> filterMap hush }) e) e1
-  unleft (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2 { event, push, i: Left >>> i, o: o >>> filterMap (swap >>> hush) }) e) e1
-    where
-    swap = case _ of
-      Left x -> Right x
-      Right x -> Left x
-
-disentangle :: forall i o. Entangled i o -> EventIO i o
-disentangle (Entangled e1) = runExists (\(EntangledF1 e) -> runExists (\(EntangledF2 { event, push, i, o }) -> { event: o event, push: i >=> push }) e) e1
 
 -- | Create an event and a function which supplies a value to that event.
-create :: forall a. ST Global (Entangled a a)
+create :: forall a. ST Global (EventIO a)
 create = create_
 
 type EventIOO i o =
@@ -389,18 +347,17 @@ foreign import deleteObjHack :: forall a. STFn2 Int (ObjHack a) Global Unit
 
 memoize :: forall a. Event a -> ST Global { event :: Event a, unsubscribe :: ST Global Unit }
 memoize e = do
-  { event, push } <- disentangle <$> create
+  { event, push } <- create
   unsubscribe <- subscribe e push
   pure { event, unsubscribe }
 
 create_
   :: forall a
-   . ST Global (Entangled a a)
+   . ST Global (EventIO a)
 create_ = do
   subscribers <- objHack
   idx <- STRef.new 0
-  pure $ Entangled $ mkExists $ EntangledF1 $ mkExists $ EntangledF2
-    { event:
+  pure { event:
         Event $ mkSTFn2 \_ k -> do
           rk <- STRef.new k
           ix <- STRef.read idx
@@ -415,8 +372,6 @@ create_ = do
           runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
             k <- liftST $ STRef.read rk
             runEffectFn1 k a
-    , i: pure
-    , o: identity
     }
 
 type PureEventIO r a =
@@ -477,3 +432,9 @@ mailbox' = do
 foreign import fastForeachThunk :: STFn1 (Array (ST Global Unit)) Global Unit
 foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
 foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
+
+makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+makeEventE e = do
+  { event, push } <- liftST create
+  unsubscribe <- e push
+  pure { event, unsubscribe }

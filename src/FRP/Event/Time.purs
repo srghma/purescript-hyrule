@@ -1,74 +1,62 @@
 module FRP.Event.Time
   ( withTime
   , debounce
-  , debounceWith
   , interval
+  , delay
   ) where
 
 import Prelude
 
-import Data.DateTime.Instant (Instant, instant, unInstant)
-import Data.Maybe (Maybe, fromMaybe, maybe)
+import Data.Compactable (compact)
+import Data.DateTime.Instant (Instant)
+import Data.Either (Either(..))
+import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Time.Duration (Milliseconds)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Aff.AVar as Avar
+import Effect.Class (liftEffect)
 import Effect.Now (now)
-import Effect.Timer (clearInterval, setInterval)
-import FRP.Event (Entangled, Event, sinister, subscribe)
-import FRP.Event.Class (fix, gateBy)
+import Effect.Timer (TimeoutId, clearInterval, setInterval, setTimeout)
+import FRP.Event (Event, makeEventE, mapAccum)
 
 -- | Create an event which reports the current time in milliseconds since the epoch.
-withTime :: forall a b. Entangled { value :: a, time :: Instant } b -> Entangled a b
-withTime e = sinister \value -> do
-    time <- now
-    pure { time, value }
+withTime :: forall a. ({ value :: a, time :: Instant } -> Effect Unit) -> a -> Effect Unit
+withTime f value = do
+  time <- now
+  f { time, value }
 
--- | On each event, ignore subsequent events for a given number of milliseconds.
-debounce :: forall a. Milliseconds -> Event a -> Event a
-debounce period = debounceWith (map { period, value: _ })
-
--- | Provided an input event and transformation, block the input event for the
--- | duration of the specified period on each output.
-debounceWith
-  :: forall a b
-   . (Event a -> Event { period :: Milliseconds, value :: b })
-  -> Event a
-  -> Event b
-debounceWith process event = map _.value $ fix \processed ->
-  let
-    expiries :: Event Instant
-    expiries =
-      map (\{ time, value } -> fromMaybe time (instant (unInstant time <> value)))
-        (withTime (map _.period processed))
-
-    comparison :: forall r. Maybe Instant -> { time :: Instant | r } -> Boolean
-    comparison a b = maybe true (_ < b.time) a
-
-    unblocked :: Event { time :: Instant, value :: a }
-    unblocked = gateBy comparison expiries stamped
-  in
-    process (map _.value unblocked)
+debounce :: forall a. Milliseconds -> Event { time :: Milliseconds, value :: a } -> Event { time :: Milliseconds, value :: a }
+debounce period = compact <<< mapAccum go Nothing
   where
-  stamped :: Event { time :: Instant, value :: a }
-  stamped = withTime event
+  go Nothing { time, value } = Tuple (Just time) (Just { time, value })
+  go (Just lastTime) { time, value } =
+    if unwrap time - unwrap lastTime > unwrap period then Tuple (Just time) (Just { time, value })
+    else Tuple (Just lastTime) Nothing
 
 -- | Create an event which fires every specified number of milliseconds.
-interval :: forall a. (Instant -> Effect a) -> Int -> Effect { event :: Event Instant, unsubscribe :: Effect Unit }
-interval n = makeEventE \k -> do
+interval' :: forall a. (Instant -> Effect a) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+interval' f n = makeEventE \k -> do
   id <- setInterval n do
     time <- now
-    k time
+    f time >>= k
   pure (clearInterval id)
 
+interval
+  :: Int
+  -> Effect
+       { event :: Event Instant
+       , unsubscribe :: Effect Unit
+       }
+interval = interval' pure
 
-delay_ :: forall a. Int -> Event a -> Event a
-delay_ = map (map (filterMap hush >>> map snd)) delay
-
-delay :: forall a. Int -> Event a -> Event (Either TimeoutId (Tuple (Maybe TimeoutId) a))
-delay n (Event e) = Event $ mkSTFn2 \tf k -> do
-  runSTFn2 e tf $ mkEffectFn1 \a -> do
-    tid <- liftST $ STRef.new Nothing
-    o <- setTimeout n do
-      t <- liftST $ STRef.read tid
-      runEffectFn1 k (Right (Tuple t a))
-    void $ liftST $ STRef.write (Just o) tid
-    runEffectFn1 k (Left o)
+delay :: forall a. Int -> (Either TimeoutId (Tuple TimeoutId a) -> Effect Unit) -> a -> Effect Unit
+delay n f value = launchAff_ do
+  tid <- Avar.empty
+  o <- liftEffect $ setTimeout n $ launchAff_ do
+    t <- Avar.read tid
+    liftEffect $ f (Right (Tuple t value))
+  Avar.put o tid
+  liftEffect $ f (Left o)
