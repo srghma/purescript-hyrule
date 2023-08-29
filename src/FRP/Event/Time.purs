@@ -13,15 +13,14 @@ import Data.Time.Duration (Milliseconds)
 import Effect (Effect)
 import Effect.Now (now)
 import Effect.Timer (clearInterval, setInterval)
-import FRP.Event (Event, makeEvent, makeEventE, subscribe)
+import FRP.Event (Entangled, Event, sinister, subscribe)
 import FRP.Event.Class (fix, gateBy)
 
 -- | Create an event which reports the current time in milliseconds since the epoch.
-withTime :: forall a. Event a -> Event { value :: a, time :: Instant }
-withTime e = makeEvent \k ->
-  subscribe e \value -> do
+withTime :: forall a b. Entangled { value :: a, time :: Instant } b -> Entangled a b
+withTime e = sinister \value -> do
     time <- now
-    k { time, value }
+    pure { time, value }
 
 -- | On each event, ignore subsequent events for a given number of milliseconds.
 debounce :: forall a. Milliseconds -> Event a -> Event a
@@ -53,9 +52,23 @@ debounceWith process event = map _.value $ fix \processed ->
   stamped = withTime event
 
 -- | Create an event which fires every specified number of milliseconds.
-interval :: Int -> Effect { event :: Event Instant, unsubscribe :: Effect Unit }
+interval :: forall a. (Instant -> Effect a) -> Int -> Effect { event :: Event Instant, unsubscribe :: Effect Unit }
 interval n = makeEventE \k -> do
   id <- setInterval n do
     time <- now
     k time
   pure (clearInterval id)
+
+
+delay_ :: forall a. Int -> Event a -> Event a
+delay_ = map (map (filterMap hush >>> map snd)) delay
+
+delay :: forall a. Int -> Event a -> Event (Either TimeoutId (Tuple (Maybe TimeoutId) a))
+delay n (Event e) = Event $ mkSTFn2 \tf k -> do
+  runSTFn2 e tf $ mkEffectFn1 \a -> do
+    tid <- liftST $ STRef.new Nothing
+    o <- setTimeout n do
+      t <- liftST $ STRef.read tid
+      runEffectFn1 k (Right (Tuple t a))
+    void $ liftST $ STRef.write (Just o) tid
+    runEffectFn1 k (Left o)
