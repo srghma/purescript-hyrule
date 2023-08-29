@@ -1,6 +1,7 @@
 { name = "hyrule"
 , dependencies =
-  [ "arrays"
+  [ "aff"
+  , "arrays"
   , "avar"
   , "control"
   , "datetime"
