@@ -24,7 +24,7 @@ import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (justOne, makeEvent, memoize, merge, subscribe)
+import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, once, keepLatest, sampleOnRight)
 import FRP.Event.Time (debounce, withTime)
@@ -627,7 +627,8 @@ main = do
               -- we need to fix that
               bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
-                pure $ wrap $ Compose $ Tuple (f0 "div") do
+                justOne $ f0 "div"
+                justNone do
                   void
                     $ s0
                         ( sample
@@ -641,7 +642,6 @@ main = do
                             e0
                         )
                     $ justOne
-                  pure (pure unit)
             u <- liftST $ subscribe (sample (bhv (bhv (bhv ((bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3")))))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
@@ -682,8 +682,8 @@ main = do
             let
               bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
-                pure $ wrap $ Compose $ Tuple (f0 "div") do
-                  void
+                justOne $ f0 "div"
+                justNone $ void
                     $ s0
                         ( sample
                             ( poll \e1 ->
@@ -697,7 +697,6 @@ main = do
                             e0
                         )
                     $ justOne
-                  pure (pure unit)
             u <- liftST $ subscribe (sample (bhv (bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3"))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
@@ -729,9 +728,9 @@ main = do
             ep <- liftST $ Event.createPure
             let
               evt = makeEvent \s -> s ep.event \i -> do
-                pure $ wrap $ Compose $ Tuple i do
+                justOne i
+                justNone do
                   when i (ep.push (not i))
-                  pure (pure unit)
             u <- liftST $ subscribe evt \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             liftST $ ep.push true

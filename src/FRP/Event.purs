@@ -5,7 +5,12 @@ module FRP.Event
   , PureEventIO
   , PureEventIOO
   , Subscriber(..)
+  , EventfulProgram
   , justOne
+  , justOneM
+  , justMany
+  , justManyM
+  , justNone
   , create
   , createPure
   , mailbox
@@ -69,6 +74,8 @@ instance functorEvent :: Functor Event where
 
 instance functorWithIndexEvent :: FunctorWithIndex Int Event where
   mapWithIndex f e = Class.mapAccum (\a b -> Tuple (a + 1) (f a b)) 0 e
+
+type EventfulProgram a = Free (Compose (ST Global) (Tuple (Array a))) Unit
 
 instance compactableEvent :: Compactable Event where
   compact = filter identity
@@ -310,8 +317,20 @@ subscribePure (Event e) k = runSTFn2 e true (mkEffectFn1 (stPusherToEffectPusher
   stPusherToEffectPusher :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
   stPusherToEffectPusher = unsafeCoerce
 
-justOne :: forall a. a -> ST Global (Free (Compose (Tuple a) (ST Global) ) Unit)
-justOne a = pure $ liftF (Compose (Tuple a $ pure unit))
+justOne :: forall a. a -> EventfulProgram a
+justOne a = liftF (Compose (pure (Tuple [ a ] unit)))
+
+justOneM :: forall a. ST Global a -> EventfulProgram a
+justOneM a = liftF (Compose (a <#> \a' -> Tuple [ a' ] unit))
+
+justMany :: forall a. Array a -> EventfulProgram a
+justMany a = liftF (Compose (pure (Tuple a  unit)))
+
+justManyM :: forall a. ST Global (Array a) -> EventfulProgram a
+justManyM a = liftF (Compose (a <#> \a' -> Tuple  a' unit))
+
+justNone :: forall a. ST Global Unit -> EventfulProgram a
+justNone st = liftF (Compose (st $> (Tuple [] unit)))
 
 -- | Make an `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.
@@ -320,7 +339,7 @@ justOne a = pure $ liftF (Compose (Tuple a $ pure unit))
 -- | control over unsubscription.
 makeEvent
   :: forall a
-   . ((forall b. Event b -> (b -> ST Global (Free (Compose (Tuple a) (ST Global)) Unit)) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit))
+   . ((forall b. Event b -> (b -> EventfulProgram a) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit))
   -> Event a
 makeEvent i = Event $ mkSTFn2 \tf k ->
   i \(Event e) kx -> do
@@ -328,11 +347,11 @@ makeEvent i = Event $ mkSTFn2 \tf k ->
       let
         go = resume >>> case _ of
           Right _ -> pure unit
-          Left (Compose (Tuple a rest')) -> do
-            rest <- liftST rest'
-            runEffectFn1 k a
+          Left (Compose prog) -> do
+            Tuple a rest <- liftST prog
+            foreachE a (runEffectFn1 k)
             go rest
-      liftST (kx ii) >>= go
+      go (kx ii)
     pure c
 
 newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))

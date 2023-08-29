@@ -39,7 +39,6 @@ import Prelude
 
 import Control.Alt (class Alt, alt)
 import Control.Apply (lift2)
-import Control.Monad.Free (wrap)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (ST)
@@ -50,15 +49,14 @@ import Data.Array as Array
 import Data.Either (Either, either)
 import Data.Filterable (eitherBool, maybeBool)
 import Data.Filterable as Filterable
-import Data.Foldable (foldr, oneOf)
+import Data.Foldable (oneOf)
 import Data.Function (applyFlipped)
-import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
-import FRP.Event (class IsEvent, Event, fold, justOne, makeEvent, subscribe, withLast)
+import FRP.Event (class IsEvent, Event, fold, justManyM, justNone, justOne, justOneM, makeEvent, subscribe, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (sampleOnRightOp)
@@ -386,16 +384,16 @@ animate scene render = do
 -- | Turn an ST Ref into a poll
 stRefToPoll :: STRef.STRef Global ~> Poll
 stRefToPoll r = do
-  poll \e -> makeEvent \s -> s e \f -> do
+  poll \e -> makeEvent \s -> s e \f -> justOneM do
     i <- STRef.read r
-    justOne (f i)
+    pure (f i)
 
 -- | Turn an ST Global into a poll
 stToPoll :: ST Global ~> Poll
 stToPoll r = do
-  poll \e -> makeEvent \s -> s e \f -> do
+  poll \e -> makeEvent \s -> s e \f -> justOneM do
     i <- r
-    justOne (f i)
+    pure (f i)
 
 filterMap
   :: forall event a b
@@ -494,9 +492,7 @@ rant a = do
     , poll: poll \e -> makeEvent \s -> do
         st <- STRef.read started
         when (not st) do
-          unsubscribe <- s (sample_ a (EClass.once e)) \i -> do
-            ep.push i
-            pure (pure unit)
+          unsubscribe <- s (sample_ a (EClass.once e)) \i -> justNone (ep.push i)
           -- ?hole -- (pure <<< pure)
           void $ STRef.write true started
           void $ flip STRef.write unsub unsubscribe
@@ -516,15 +512,14 @@ deflect a = do
   pure $ poll \e -> makeEvent \s -> do
     st <- STRef.read started
     when (not st) do
-      unsubscribe <- s (sample_ a (EClass.once e)) \i -> do
+      unsubscribe <- s (sample_ a (EClass.once e)) \i -> justNone do
         void $ liftST $ flip STRef.modify ep $ flip Array.snoc i
-        pure (pure unit)
       void $ STRef.write true started
       void $ STRef.write unsubscribe unsub
-    u3 <- s e \f -> do
+    u3 <- s e \f -> justManyM do
       join (STRef.read unsub)
       r <- STRef.read ep
-      pure $ foldr (\aa b -> wrap (Compose (Tuple (f aa) $ pure b))) (pure unit) r
+      pure $ map f r
     pure do
       u3
 
@@ -554,6 +549,6 @@ keepLatest a = APoll \e ->
 refize :: forall a. a -> Poll a -> Poll (Tuple (STRef.STRef Global a) a)
 refize a p = poll \e -> makeEvent \s -> do
   r <- STRef.new a
-  s (sampleBy Tuple p e) \(Tuple p' e') -> do
+  s (sampleBy Tuple p e) \(Tuple p' e') -> justOneM do
     void $ STRef.write p' r
-    justOne $ e' (Tuple r p')
+    pure $ e' (Tuple r p') 
