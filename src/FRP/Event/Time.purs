@@ -8,7 +8,7 @@ module FRP.Event.Time
 import Prelude
 
 import Data.Compactable (compact)
-import Data.DateTime.Instant (Instant)
+import Data.DateTime.Instant (Instant, unInstant)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
@@ -28,12 +28,12 @@ withTime f value = do
   time <- now
   f { time, value }
 
-debounce :: forall a. Milliseconds -> Event { time :: Milliseconds, value :: a } -> Event { time :: Milliseconds, value :: a }
+debounce :: forall a. Milliseconds -> Event { time :: Instant, value :: a } -> Event { time :: Instant, value :: a }
 debounce period = compact <<< mapAccum go Nothing
   where
   go Nothing { time, value } = Tuple (Just time) (Just { time, value })
   go (Just lastTime) { time, value } =
-    if unwrap time - unwrap lastTime > unwrap period then Tuple (Just time) (Just { time, value })
+    if unwrap (unInstant time) - unwrap (unInstant lastTime) > unwrap period then Tuple (Just time) (Just { time, value })
     else Tuple (Just lastTime) Nothing
 
 -- | Create an event which fires every specified number of milliseconds.

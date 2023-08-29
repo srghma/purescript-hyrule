@@ -5,13 +5,15 @@ module FRP.Event
   , PureEventIO
   , PureEventIOO
   , Subscriber(..)
-  , makeEventE
+  , justOne
   , create
+  , createPure
   , mailbox
   , mailbox'
   , mailboxPure
   , mailboxPure'
   , makeEvent
+  , makeEventE
   , memoize
   , merge
   , mergeMap
@@ -26,6 +28,7 @@ import Prelude
 
 import Control.Alternative (class Alt, class Plus)
 import Control.Apply (lift2)
+import Control.Monad.Free (Free, liftF, resume)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
@@ -37,6 +40,7 @@ import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
 import Data.Filterable as Filterable
 import Data.Foldable (for_)
+import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -306,6 +310,9 @@ subscribePure (Event e) k = runSTFn2 e true (mkEffectFn1 (stPusherToEffectPusher
   stPusherToEffectPusher :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
   stPusherToEffectPusher = unsafeCoerce
 
+justOne :: forall a. a -> ST Global (Free (Compose (Tuple a) (ST Global) ) Unit)
+justOne a = pure $ liftF (Compose (Tuple a $ pure unit))
+
 -- | Make an `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.
 -- |
@@ -313,13 +320,19 @@ subscribePure (Event e) k = runSTFn2 e true (mkEffectFn1 (stPusherToEffectPusher
 -- | control over unsubscription.
 makeEvent
   :: forall a
-   . (forall r. ((forall b. Event b -> (b -> ST r (Array a)) -> ST r (ST r Unit)) -> ST r (ST r Unit)))
+   . ((forall b. Event b -> (b -> ST Global (Free (Compose (Tuple a) (ST Global)) Unit)) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit))
   -> Event a
 makeEvent i = Event $ mkSTFn2 \tf k ->
   i \(Event e) kx -> do
     c <- runSTFn2 e tf $ mkEffectFn1 \ii -> do
-      arr <- liftST (kx ii)
-      foreachE arr (\n -> runEffectFn1 k n)
+      let
+        go = resume >>> case _ of
+          Right _ -> pure unit
+          Left (Compose (Tuple a rest')) -> do
+            rest <- liftST rest'
+            runEffectFn1 k a
+            go rest
+      liftST (kx ii) >>= go
     pure c
 
 newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
@@ -329,10 +342,12 @@ type EventIO a =
   , push :: a -> Effect Unit
   }
 
-
 -- | Create an event and a function which supplies a value to that event.
 create :: forall a. ST Global (EventIO a)
 create = create_
+
+createPure :: forall a. ST Global (PureEventIO a)
+createPure = unsafeCoerce create_
 
 type EventIOO i o =
   { event :: Event o
@@ -357,7 +372,8 @@ create_
 create_ = do
   subscribers <- objHack
   idx <- STRef.new 0
-  pure { event:
+  pure
+    { event:
         Event $ mkSTFn2 \_ k -> do
           rk <- STRef.new k
           ix <- STRef.read idx
@@ -374,9 +390,9 @@ create_ = do
             runEffectFn1 k a
     }
 
-type PureEventIO r a =
+type PureEventIO a =
   { event :: Event a
-  , push :: a -> ST r Unit
+  , push :: a -> ST Global Unit
   }
 
 type PureEventIOO r a =

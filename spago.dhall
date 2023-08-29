@@ -1,6 +1,7 @@
 { name = "hyrule"
 , dependencies =
   [ "arrays"
+  , "avar"
   , "control"
   , "datetime"
   , "debug"
@@ -8,6 +9,8 @@
   , "either"
   , "filterable"
   , "foldable-traversable"
+  , "free"
+  , "functors"
   , "js-timers"
   , "maybe"
   , "newtype"

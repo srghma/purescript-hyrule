@@ -3,6 +3,7 @@ module Test.Main where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Monad.Free (wrap)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Ref (STRef)
@@ -12,6 +13,7 @@ import Data.Array (length, replicate, (..))
 import Data.Array as Array
 import Data.Filterable (filter)
 import Data.Foldable (sequence_)
+import Data.Functor.Compose (Compose(..))
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
 import Data.Traversable (foldr, for_, sequence)
@@ -22,10 +24,10 @@ import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (mailboxed, makeEvent, makeLemmingEvent, memoized, merge, subscribe)
+import FRP.Event (justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, once, keepLatest, sampleOnRight)
-import FRP.Event.Time (debounce)
+import FRP.Event.Time (debounce, withTime)
 import FRP.Poll (deflect, derivative', fixB, gate, integral', poll, rant, sample, sample_, stRefToPoll)
 import FRP.Poll as Poll
 import Test.Spec (describe, it)
@@ -619,18 +621,28 @@ main = do
             r <- liftST $ STRef.new []
             ep <- liftST $ Event.create
             let
-              bhv c = poll \e0 -> makeLemmingEvent \s0 k0 -> s0 e0 \f0 -> do
+              -- this is going to be tricky
+              -- before, we could emit and then do some more work
+              -- now, however, emission is last
+              -- we need to fix that
+              bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
-                k0 (f0 "div")
-                void $ flip s0 k0 $ flip sample e0 $ poll \e1 ->
-                  merge
-                    [ flip sample e1
-                        $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "span")
-                    , flip sample e1 $ c
-                    , flip sample e1
-                        $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "b")
-                    ]
-            u <- liftST $ subscribe (sample (bhv (bhv (bhv ((bhv $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "h3")))))) ep.event) \i ->
+                pure $ wrap $ Compose $ Tuple (f0 "div") do
+                  void
+                    $ s0
+                        ( sample
+                            ( poll \e1 ->
+                                merge
+                                  [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
+                                  , sample c e1
+                                  , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
+                                  ]
+                            )
+                            e0
+                        )
+                    $ justOne
+                  pure (pure unit)
+            u <- liftST $ subscribe (sample (bhv (bhv (bhv ((bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3")))))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
             v <- liftST $ STRef.read r
@@ -668,19 +680,25 @@ main = do
             r <- liftST $ STRef.new []
             ep <- liftST $ Event.create
             let
-              bhv c = poll \e0 -> makeLemmingEvent \s0 k0 -> s0 e0 \f0 -> do
+              bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
-                k0 (f0 "div")
-                void $ flip s0 k0 $ flip sample e0 $ poll \e1 ->
-                  merge
-                    [ flip sample e1
-                        $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "span")
-                    , flip sample e1 $ c
-                    , flip sample e1
-                        $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "b")
-                    , flip sample e1 $ c
-                    ]
-            u <- liftST $ subscribe (sample (bhv (bhv $ poll \e2 -> makeLemmingEvent \s2 k2 -> s2 e2 \f2 -> k2 (f2 "h3"))) ep.event) \i ->
+                pure $ wrap $ Compose $ Tuple (f0 "div") do
+                  void
+                    $ s0
+                        ( sample
+                            ( poll \e1 ->
+                                merge
+                                  [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
+                                  , sample c e1
+                                  , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
+                                  , sample c e1
+                                  ]
+                            )
+                            e0
+                        )
+                    $ justOne
+                  pure (pure unit)
+            u <- liftST $ subscribe (sample (bhv (bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3"))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
             v <- liftST $ STRef.read r
@@ -708,14 +726,15 @@ main = do
             liftST u
           it "should respond correctly to internal pushes" $ liftEffect do
             r <- liftST $ STRef.new []
-            ep <- liftST $ Event.create
+            ep <- liftST $ Event.createPure
             let
-              evt = makeEvent \k -> Event.subscribe ep.event \i -> do
-                k i
-                when i (ep.push (not i))
+              evt = makeEvent \s -> s ep.event \i -> do
+                pure $ wrap $ Compose $ Tuple i do
+                  when i (ep.push (not i))
+                  pure (pure unit)
             u <- liftST $ subscribe evt \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
-            ep.push true
+            liftST $ ep.push true
             v <- liftST $ STRef.read r
             v `shouldEqual`
               [ true
@@ -727,16 +746,16 @@ main = do
             rf <- liftEffect $ Ref.new []
             unsub <- liftST $ Event.subscribe (debounce (Milliseconds 1000.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
-              push 1
-              push 2
-              push 3
-              push 4
+              withTime push 1
+              withTime push 2
+              withTime push 3
+              withTime push 4
             delay (Milliseconds 1500.0)
             liftEffect do
-              push 5
-              push 6
+              withTime push 5
+              withTime push 6
               o <- Ref.read rf
-              o `shouldEqual` [ 5, 1 ]
+              map _.value o `shouldEqual` [ 5, 1 ]
               liftST $ unsub
           it "debounce debounces 2" do
             let
@@ -744,14 +763,14 @@ main = do
                 { event, push } <- liftST $ Event.create
                 rf <- liftEffect $ Ref.new []
                 unsub <- liftST $ Event.subscribe (debounce (Milliseconds 500.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
-                liftEffect $ push unit
+                liftEffect $ withTime push unit
                 when emitSecond do
-                  liftEffect $ push unit
+                  liftEffect $ withTime push unit
                 delay $ Milliseconds 250.0
-                liftEffect $ push unit
+                liftEffect $ withTime push unit
                 delay $ Milliseconds 300.0
-                liftEffect $ push unit
-                liftEffect $ push unit
+                liftEffect $ withTime push unit
+                liftEffect $ withTime push unit
                 o <- liftEffect $ Ref.read rf
                 length o `shouldEqual` 2
                 liftST $ unsub
@@ -780,52 +799,29 @@ main = do
                 unsafePerformEffect do
                   void $ liftST $ STRef.modify (add 1) count
                   pure $ v
-              mapped = keepLatest $
-                memoized (identity (map fn event)) \e -> Event.makeEvent \k -> do
-                  u1 <- Event.subscribe e (\_ -> pure unit)
-                  u2 <- Event.subscribe e k
-                  pure (u1 *> u2)
-            u <- liftST $ Event.subscribe mapped (\_ -> pure unit)
+            mmz <- liftST $ memoize (map fn event)
+            u1 <- liftST $ Event.subscribe mmz.event mempty
+            u2 <- liftST $ Event.subscribe mmz.event mempty
             push 0
             (liftST $ STRef.read count) >>= shouldEqual 1
-            liftST $ u
-          it "should not memoize when applied internally" $ liftEffect do
-            { push, event } <- liftST $ Event.create
-            count <- liftST $ STRef.new 0
-            let
-              fn v =
-                unsafePerformEffect do
-                  void $ liftST $ STRef.modify (add 1) count
-                  pure $ v
-              mapped = keepLatest
-                $ memoized event
-                $ (lcmap (identity <<< map fn)) \e ->
-                    Event.makeEvent \k -> do
-                      u1 <- liftST $ Event.subscribe e (\_ -> pure unit)
-                      u2 <- liftST $ Event.subscribe e k
-                      pure (u1 *> u2)
-            u <- liftST $ Event.subscribe mapped (\_ -> pure unit)
-            push 0
-            (liftST $ STRef.read count) >>= shouldEqual 2
-            liftST $ u
-          it "should mailboxed" $ liftEffect do
+            liftST $ u1 *> u2 *> mmz.unsubscribe
+          it "should mailbox" $ liftEffect do
             r <- liftST $ STRef.new []
-            e <- liftST $ Event.create
-            u <- liftST $ Event.subscribe (keepLatest $ mailboxed e.event \f -> f 3 <|> f 4) \i ->
+            e <- liftST $ Event.mailbox
+            u <- liftST $ Event.subscribe (e.event 3 <|> e.event 4) \i ->
               liftST $ void $ STRef.modify (Array.cons i) r
-            do
-              e.push { address: 42, payload: true }
-              e.push { address: 43, payload: true }
-              e.push { address: 44, payload: true }
-              e.push { address: 3, payload: true } --
-              e.push { address: 42, payload: false }
-              e.push { address: 43, payload: true }
-              e.push { address: 43, payload: false }
-              e.push { address: 4, payload: false } --
-              e.push { address: 42, payload: false }
-              e.push { address: 43, payload: true }
-              e.push { address: 3, payload: false } --
-              e.push { address: 101, payload: true }
+            e.push { address: 42, payload: true }
+            e.push { address: 43, payload: true }
+            e.push { address: 44, payload: true }
+            e.push { address: 3, payload: true } --
+            e.push { address: 42, payload: false }
+            e.push { address: 43, payload: true }
+            e.push { address: 43, payload: false }
+            e.push { address: 4, payload: false } --
+            e.push { address: 42, payload: false }
+            e.push { address: 43, payload: true }
+            e.push { address: 3, payload: false } --
+            e.push { address: 101, payload: true }
             o <- liftST $ STRef.read r
             o `shouldEqual` [ false, false, true ]
             liftST u
