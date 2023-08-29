@@ -551,4 +551,4 @@ refize a p = poll \e -> makeEvent \s -> do
   r <- STRef.new a
   s (sampleBy Tuple p e) \(Tuple p' e') -> justOneM do
     void $ STRef.write p' r
-    pure $ e' (Tuple r p') 
+    pure $ e' (Tuple r p')

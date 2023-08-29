@@ -6,6 +6,7 @@ module FRP.Event
   , PureEventIOO
   , Subscriber(..)
   , EventfulProgram
+  , ProgramfulEvent
   , justOne
   , justOneM
   , justMany
@@ -76,6 +77,7 @@ instance functorWithIndexEvent :: FunctorWithIndex Int Event where
   mapWithIndex f e = Class.mapAccum (\a b -> Tuple (a + 1) (f a b)) 0 e
 
 type EventfulProgram a = Free (Compose (ST Global) (Tuple (Array a))) Unit
+type ProgramfulEvent b = forall a. Free (Compose (ST Global) (Tuple (Array a))) b
 
 instance compactableEvent :: Compactable Event where
   compact = filter identity
@@ -323,14 +325,14 @@ justOne a = liftF (Compose (pure (Tuple [ a ] unit)))
 justOneM :: forall a. ST Global a -> EventfulProgram a
 justOneM a = liftF (Compose (a <#> \a' -> Tuple [ a' ] unit))
 
-justMany :: forall a. Array a -> EventfulProgram a
-justMany a = liftF (Compose (pure (Tuple a  unit)))
+justMany :: Array ~> EventfulProgram
+justMany a = liftF (Compose (pure (Tuple a unit)))
 
 justManyM :: forall a. ST Global (Array a) -> EventfulProgram a
-justManyM a = liftF (Compose (a <#> \a' -> Tuple  a' unit))
+justManyM a = liftF (Compose (a <#> \a' -> Tuple a' unit))
 
-justNone :: forall a. ST Global Unit -> EventfulProgram a
-justNone st = liftF (Compose (st $> (Tuple [] unit)))
+justNone :: ST Global ~> ProgramfulEvent
+justNone st = liftF (Compose (st <#> \st' -> (Tuple [] st')))
 
 -- | Make an `Event` from a function which accepts a callback and returns an
 -- | unsubscription function.

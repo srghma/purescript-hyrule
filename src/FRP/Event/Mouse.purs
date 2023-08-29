@@ -90,8 +90,9 @@ withPosition
   :: forall a
    . Mouse
   -> ({ value :: a, pos :: Maybe { x :: Int, y :: Int } } -> Effect Unit)
-  -> a -> Effect Unit
-withPosition (Mouse { position }) f  value = do
+  -> a
+  -> Effect Unit
+withPosition (Mouse { position }) f value = do
   pos <- Ref.read position
   f { value, pos }
 
@@ -100,7 +101,8 @@ withButtons
   :: forall a
    . Mouse
   -> ({ value :: a, buttons :: Set.Set Int } -> Effect Unit)
-  -> a -> Effect Unit
+  -> a
+  -> Effect Unit
 withButtons (Mouse { buttons }) f value = do
   buttonsValue <- Ref.read buttons
   f { value, buttons: buttonsValue }

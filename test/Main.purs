@@ -684,19 +684,19 @@ main = do
                 -- first element
                 justOne $ f0 "div"
                 justNone $ void
-                    $ s0
-                        ( sample
-                            ( poll \e1 ->
-                                merge
-                                  [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
-                                  , sample c e1
-                                  , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
-                                  , sample c e1
-                                  ]
-                            )
-                            e0
-                        )
-                    $ justOne
+                  $ s0
+                      ( sample
+                          ( poll \e1 ->
+                              merge
+                                [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
+                                , sample c e1
+                                , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
+                                , sample c e1
+                                ]
+                          )
+                          e0
+                      )
+                  $ justOne
             u <- liftST $ subscribe (sample (bhv (bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3"))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity

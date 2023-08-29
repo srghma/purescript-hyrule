@@ -81,7 +81,8 @@ withKeys
   :: forall a
    . Keyboard
   -> ({ value :: a, keys :: Set.Set String } -> Effect Unit)
-  ->  a -> Effect Unit
-withKeys (Keyboard { keys }) f  value = do
-    keysValue <- Ref.read keys
-    f { value, keys: keysValue }
+  -> a
+  -> Effect Unit
+withKeys (Keyboard { keys }) f value = do
+  keysValue <- Ref.read keys
+  f { value, keys: keysValue }
