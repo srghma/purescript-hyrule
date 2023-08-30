@@ -153,7 +153,7 @@ class Pollable event pollable | pollable -> event where
   sample :: forall a b. APoll event a -> pollable (a -> b) -> pollable b
 
 instance (IsEvent event, Pollable event event) => Pollable event (APoll event) where
-  sample a ab = poll \e -> sample (sampleOnRight a ab) e
+  sample = EClass.sampleOnRight
 else instance IsEvent event => Pollable event event where
   sample (APoll a) ab = a ab
 

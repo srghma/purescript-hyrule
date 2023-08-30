@@ -175,8 +175,8 @@ instance Pollable Event Event where
   sample (APoll (Tuple x y)) ab = e <|> Poll.sample y ab
     where
     e = makeEvent \s -> s ab \f -> justMany (map f x)
-else instance (IsEvent event, Pollable event event) => Pollable event (APoll event) where
-  sample a ab = poll \e -> sample (sampleOnRight a ab) e
+else instance (IsEvent event, Apply event, Pollable event event, Poll.Pollable event event) => Pollable event (APoll event) where
+  sample = EClass.sampleOnRight
 else instance (IsEvent event, Poll.Pollable event event) => Pollable event event where
   sample (APoll (Tuple x y)) ab = oneOf (map (ab <@> _) x <> [ Poll.sample y ab ])
 
@@ -190,7 +190,7 @@ sample_ = sampleBy const
 
 -- | Switch `Poll`s based on an `Event`.
 switcher :: forall event a. Apply event => Pollable event event => Poll.Pollable event event => IsEvent event => APoll event a -> event (APoll event a) -> APoll event a
-switcher b e = EClass.keepLatest (poll' [b] e)
+switcher b e = EClass.keepLatest (poll' [ b ] e)
 
 -- | Sample a `Poll` on some `Event` by providing a predicate function.
 gateBy :: forall event p a. Pollable event event => Filterable.Filterable event => (p -> a -> Boolean) -> APoll event p -> event a -> event a
@@ -435,14 +435,13 @@ sampleOnRight (APoll (Tuple a b)) (APoll (Tuple x y)) = case Array.last a, x of
   -- unless it is superceded by the left
   Just v, a -> APoll $ Tuple (map (_ $ v) a) $ ((pure v <|> b) `EClass.sampleOnRight` y)
 
-
 sampleOnLeft :: forall event a b. Apply event => Poll.Pollable event event => Pollable event event => IsEvent event => APoll event a -> APoll event (a -> b) -> APoll event b
 sampleOnLeft (APoll (Tuple _ b)) (APoll (Tuple x y)) = case Array.last x of
   Nothing -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` y)
   -- because we are sampling on the left, a pure emission on the left
   -- will never be picked up because by the time the left emits
   -- the right still hasn't emitted yet
-  Just w -> APoll $ Tuple [] $  (b `EClass.sampleOnLeft` (pure w <|> y))
+  Just w -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` (pure w <|> y))
 
 fix
   :: forall event a
@@ -452,8 +451,10 @@ fix
   -> APoll event a
 fix f = poll \e -> (\(Tuple a ff) -> ff a) <$> EClass.fix \ee -> sampleBy Tuple (f (sham (fst <$> ee))) e
 
-once :: forall event a. Pollable event event => IsEvent event => APoll event a -> APoll event a
-once a = poll \e -> EClass.once (sample a e)
+once :: forall event a. Pollable event event => Poll.Pollable event event => IsEvent event => APoll event a -> APoll event a
+once (APoll (Tuple a b)) = case a of
+  [] -> APoll $ Tuple [] $ EClass.once b
+  x -> APoll $ Tuple x empty
 
 instance (IsEvent event, Apply event, Plus event, Pollable event event, Poll.Pollable event event) => IsEvent (APoll event) where
   sampleOnRight = sampleOnRight
