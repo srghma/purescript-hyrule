@@ -3,7 +3,6 @@ module Test.Main where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.Free (wrap)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Ref (STRef)
@@ -13,6 +12,7 @@ import Data.Array (length, replicate, (..))
 import Data.Array as Array
 import Data.Filterable (filter)
 import Data.Foldable (sequence_)
+import FRP.OptimizedPoll as OPoll
 import Data.Functor.Compose (Compose(..))
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
@@ -362,6 +362,27 @@ suite7 name { setup, prime, create, mailbox, toEvent, underTest } = do
     o `shouldEqual` [ false, false, true ]
     liftST $ u
 
+suite8 name { setup, prime, create, toEvent, underTest } = do
+  describe name do
+    it "should handle poll fold 1" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing <- liftST create
+      let
+        event' = fold (\b _ -> b + 1) 0 ((pure unit) <|> underTest testing)
+      u <- liftST $ subscribe (toEvent event' ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 2, 1 ]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 3 ]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 4 ]
+      liftST u
+
 main :: Effect Unit
 main = do
   launchAff_
@@ -370,6 +391,13 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite1 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
@@ -387,6 +415,13 @@ main = do
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
+        suite2 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
         suite2 "Event"
           { setup: pure unit
           , prime: pure
@@ -394,11 +429,17 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-
         suite3 "Poll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite3 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
@@ -414,6 +455,14 @@ main = do
           , desc: "should distribute apply to all behaviors"
           , prime: \ep -> ep.push unit
           , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite4 "OPoll"
+          { setup: Event.create
+          , desc: "should distribute apply to all behaviors"
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
@@ -439,6 +488,13 @@ main = do
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
+        suite5 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
         suite6 "Event"
           { setup: pure unit
           , prime: pure
@@ -450,6 +506,13 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite6 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
@@ -469,11 +532,33 @@ main = do
           , toEvent: \b ep -> sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
+        suite7 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
+          , mailbox: Poll.mailbox
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite8 "Poll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite8 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
         describe "Unique to Poll" do
           it "should obliterate purity when on a rant" do
             { event, push } <- liftST $ Event.create
             rf <- liftEffect $ Ref.new []
-            unsub <- liftST $ Event.subscribe (sample_ (pure 42) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            unsub <- liftST $ Event.subscribe (sample_ (pure 42 :: Poll.Poll Int) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               push unit
               o <- Ref.read rf

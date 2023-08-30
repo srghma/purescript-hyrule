@@ -19,6 +19,7 @@
   , "ordered-collections"
   , "prelude"
   , "refs"
+  , "safe-coerce"
   , "st"
   , "tuples"
   , "unsafe-coerce"
