@@ -189,9 +189,8 @@ sample_ :: forall event pollable a b. Pollable event pollable => Functor event =
 sample_ = sampleBy const
 
 -- | Switch `Poll`s based on an `Event`.
-switcher :: forall event a. Pollable event event => IsEvent event => APoll event a -> event (APoll event a) -> APoll event a
-switcher b0 e = poll \s ->
-  EClass.keepLatest ((EClass.once s $> (sample b0 s)) `alt` map (\b -> sample b s) e)
+switcher :: forall event a. Apply event => Pollable event event => Poll.Pollable event event => IsEvent event => APoll event a -> event (APoll event a) -> APoll event a
+switcher b e = EClass.keepLatest (poll' [b] e)
 
 -- | Sample a `Poll` on some `Event` by providing a predicate function.
 gateBy :: forall event p a. Pollable event event => Filterable.Filterable event => (p -> a -> Boolean) -> APoll event p -> event a -> event a
