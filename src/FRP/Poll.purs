@@ -376,10 +376,10 @@ animate
   -> Effect (Effect Unit)
 animate scene render = do
   { event, unsubscribe } <- animationFrame
-  u2 <- liftST $ subscribe (sample_ scene event) render
+  u2 <- subscribe (sample_ scene event) render
   pure do
     unsubscribe
-    liftST u2
+    u2
 
 -- | Turn an ST Ref into a poll
 stRefToPoll :: STRef.STRef Global ~> Poll
