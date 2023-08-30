@@ -11,8 +11,7 @@ import Control.Plus (empty)
 import Data.Array (length, replicate, (..))
 import Data.Array as Array
 import Data.Filterable (filter)
-import Data.Foldable (sequence_)
-import FRP.OptimizedPoll as OPoll
+import Data.Foldable (oneOfMap, sequence_)
 import Data.Functor.Compose (Compose(..))
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
@@ -28,6 +27,7 @@ import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, once, keepLatest, sampleOnRight)
 import FRP.Event.Time (debounce, withTime)
+import FRP.OptimizedPoll as OPoll
 import FRP.Poll (deflect, derivative', fixB, gate, integral', poll, rant, sample, sample_, stRefToPoll)
 import FRP.Poll as Poll
 import Test.Spec (describe, it)
@@ -382,7 +382,24 @@ suite8 name { setup, prime, create, toEvent, underTest } = do
       testing.push unit
       liftST (STRef.read r) >>= shouldEqual [ 4 ]
       liftST u
-
+    it "should handle poll fold 2" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing <- liftST create
+      let
+        event' = fold (\b _ -> b + 1) 0 (oneOfMap pure [unit, unit, unit] <|> underTest testing)
+      u <- liftST $ subscribe (toEvent event' ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [4,3,2,1]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 5 ]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 6 ]
+      liftST u
 main :: Effect Unit
 main = do
   launchAff_

@@ -95,15 +95,15 @@ instance applyAPoll :: (Alt event, Apply event, IsEvent event, Poll.Pollable Pol
     Just x, Just y -> APoll $ Tuple (map (x $ _) aa) $ (((pure x <|> f) `EClass.sampleOnRightOp` a) <|> (f `EClass.sampleOnLeftOp` (pure y <|> a)))
 
 instance applicativeAPoll :: (Apply event, Plus event, IsEvent event, Poll.Pollable Poll.APoll event event) => Applicative (APoll event) where
-  pure a = APoll (Tuple [a] empty)
+  pure a = APoll (Tuple [ a ] empty)
 
-instance semigroupAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event,Semigroup a) => Semigroup (APoll event a) where
+instance semigroupAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event, Semigroup a) => Semigroup (APoll event a) where
   append = lift2 append
 
-instance monoidAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event,Monoid a) => Monoid (APoll event a) where
+instance monoidAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event, Monoid a) => Monoid (APoll event a) where
   mempty = pure mempty
 
-instance heytingAlgebraAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event,HeytingAlgebra a) => HeytingAlgebra (APoll event a) where
+instance heytingAlgebraAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event, HeytingAlgebra a) => HeytingAlgebra (APoll event a) where
   tt = pure tt
   ff = pure ff
   not = map not
@@ -117,7 +117,7 @@ instance semiringAPoll :: (Apply event, Alt event, Poll.Pollable Poll.APoll even
   add = lift2 add
   mul = lift2 mul
 
-instance ringAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event,Ring a) => Ring (APoll event a) where
+instance ringAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt event, IsEvent event, Ring a) => Ring (APoll event a) where
   sub = lift2 sub
 
 -- | Construct a `Poll` from its sampling function.
@@ -428,7 +428,7 @@ sampleOnLeft (APoll (Tuple _ b)) (APoll (Tuple x y)) = case Array.last x of
   -- because we are sampling on the left, a pure emission on the left
   -- will never be picked up because by the time the left emits
   -- the right still hasn't emitted yet
-  Just w -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` (pure w <|> y)) 
+  Just w -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` (pure w <|> y))
 
 fix
   :: forall event a
@@ -438,13 +438,9 @@ fix
   => IsEvent event
   => (APoll event a -> APoll event a)
   -> APoll event a
-fix f = APoll $ Tuple [] $ EClass.fix (dimap (\p -> APoll (Tuple [] p)) toPoll f)
-    -- ugggh
-    -- let (APoll (Tuple h _)) = f (APoll (Tuple [] empty))
-    -- let fixable = dimap (\y -> APoll (Tuple [] y)) (\(APoll (Tuple _ y)) -> y) f
-    -- case Array.unsnoc h of
-    --   Just { init, last } -> APoll $ Tuple init $ EClass.fix (map (alt (pure last)) fixable)
-    --   Nothing -> APoll $ Tuple [] $ EClass.fix fixable
+fix f = APoll $ Tuple [] $ Poll.poll \e -> (\(Tuple a ff) -> ff a) <$> EClass.fix \ee -> do
+  let (APoll (Tuple x y)) = f (sham (fst <$> ee))
+  oneOf ([ Poll.sampleBy Tuple y e ] <> map ((\i -> Tuple i <$> e) >>> EClass.once) x)
 
 once :: forall event a. Poll.Pollable APoll event event => Poll.Pollable Poll.APoll event event => IsEvent event => APoll event a -> APoll event a
 once (APoll (Tuple a b)) = case a of
