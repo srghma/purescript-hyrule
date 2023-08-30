@@ -142,7 +142,7 @@ mergeMap f a = APoll \e -> Event.mergeMap (flip sample e <<< f) a
 
 -- | A poll where the answers are rigged by the nefarious `Event a`
 sham :: forall event. IsEvent event => event ~> APoll event
-sham i = poll \e -> EClass.keepLatest (map (\f -> f <$> i) e)
+sham i = poll \e -> EClass.sampleOnLeft i e
 
 -- | Turn a function over events into a function over polls.
 dredge :: forall a b event. Apply event => (event a -> event b) -> APoll event a -> APoll event b
