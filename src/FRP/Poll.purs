@@ -8,7 +8,7 @@ module FRP.Poll
   , derivative
   , derivative'
   , dredge
-  -- , fixB
+  , fixB
   , gate
   , gateBy
   , integral
@@ -16,15 +16,16 @@ module FRP.Poll
   , mailbox
   , merge
   , mergeMap
+  , poll''
   , poll'
-  , toPoll
   , poll
+  , toPoll
   , rant
   , sham
-  -- , solve
-  -- , solve'
-  -- , solve2
-  -- , solve2'
+  , solve
+  , solve'
+  , solve2
+  , solve2'
   , stRefToPoll
   , stToPoll
   , step
@@ -124,15 +125,17 @@ instance ringAPoll :: (Apply event, Poll.Pollable Poll.APoll event event, Alt ev
   sub = lift2 sub
 
 -- | Construct a `Poll` from its sampling function.
-poll :: forall event. EClass.IsEvent event => event ~> APoll event
-poll i = APoll (Tuple [] (Poll.sham i))
+poll'' :: forall event. EClass.IsEvent event => event ~> APoll event
+poll'' i = APoll (Tuple [] (Poll.sham i))
 
 poll' :: forall event a. EClass.IsEvent event => Array a -> event a -> APoll event a
 poll' a i = APoll (Tuple a (Poll.sham i))
 
+poll :: forall event a. (forall b. event (a -> b) -> event b) -> APoll event a
+poll f = APoll (Tuple [] $ Poll.poll f)
+
 toPoll :: forall event. Alt event => Apply event => Plus event => APoll event ~> Poll.APoll event
 toPoll (APoll (Tuple a b)) = (oneOfMap pure a) <|> b
--- Poll.poll \e -> oneOf (map (e <@> _) a) <|> b
 
 -- | Create a `Poll` which is updated when an `Event` fires, by providing
 -- | an initial value.
@@ -271,55 +274,55 @@ derivative'
   -> APoll event t
 derivative' = derivative (_ $ identity)
 
--- -- | Compute a fixed point
--- fixB :: forall event a. Poll.Pollable APoll event event => IsEvent event => a -> (APoll event a -> APoll event a) -> APoll event a
--- fixB a f =
---   poll \s ->
---     EClass.sampleOnRight
---       ( EClass.fix \event ->
---           let
---             b = f (step a event)
---           in
---             sample_ b s
---       )
---       s
+-- | Compute a fixed point
+fixB :: forall event a. Poll.Pollable APoll event event => IsEvent event => a -> (APoll event a -> APoll event a) -> APoll event a
+fixB a f =
+  poll \s ->
+    EClass.sampleOnRight
+      ( EClass.fix \event ->
+          let
+            b = f (step a event)
+          in
+            Poll.sample_ b s
+      )
+      s
 
--- -- | Solve a first order differential equation of the form
--- -- |
--- -- | ```
--- -- | da/dt = f a
--- -- | ```
--- -- |
--- -- | by integrating once (specifying the initial conditions).
--- -- |
--- -- | For example, the exponential function with growth rate `⍺`:
--- -- |
--- -- | ```purescript
--- -- | exp = solve' 1.0 Time.seconds (⍺ * _)
--- -- | ```
--- solve
---   :: forall t a
---    . Field t
---   => Semiring a
---   => (((a -> t) -> t) -> a)
---   -> a
---   -> Poll t
---   -> (Poll a -> Poll a)
---   -> Poll a
--- solve g a0 t f = fixB a0 \b -> integral g a0 t (f b)
+-- | Solve a first order differential equation of the form
+-- |
+-- | ```
+-- | da/dt = f a
+-- | ```
+-- |
+-- | by integrating once (specifying the initial conditions).
+-- |
+-- | For example, the exponential function with growth rate `⍺`:
+-- |
+-- | ```purescript
+-- | exp = solve' 1.0 Time.seconds (⍺ * _)
+-- | ```
+solve
+  :: forall t a
+   . Field t
+  => Semiring a
+  => (((a -> t) -> t) -> a)
+  -> a
+  -> Poll t
+  -> (Poll a -> Poll a)
+  -> Poll a
+solve g a0 t f = fixB a0 \b -> integral g a0 t (f b)
 
--- -- | Solve a first order differential equation.
--- -- |
--- -- | This function is a simpler version of `solve` where the function being
--- -- | integrated takes values in the same field used to represent time.
--- solve'
---   :: forall a
---    . Field a
---   => a
---   -> Poll a
---   -> (Poll a -> Poll a)
---   -> Poll a
--- solve' = solve (_ $ identity)
+-- | Solve a first order differential equation.
+-- |
+-- | This function is a simpler version of `solve` where the function being
+-- | integrated takes values in the same field used to represent time.
+solve'
+  :: forall a
+   . Field a
+  => a
+  -> Poll a
+  -> (Poll a -> Poll a)
+  -> Poll a
+solve' = solve (_ $ identity)
 
 -- | Solve a second order differential equation of the form
 -- |
@@ -334,36 +337,36 @@ derivative' = derivative (_ $ identity)
 -- | ```purescript
 -- | oscillate = solve2' 1.0 0.0 Time.seconds (\x dx -> -⍺ * x - δ * dx)
 -- | ```
--- solve2
---   :: forall t a
---    . Field t
---   => Semiring a
---   => (((a -> t) -> t) -> a)
---   -> a
---   -> a
---   -> Poll t
---   -> (Poll a -> Poll a -> Poll a)
---   -> Poll a
--- solve2 g a0 da0 t f =
---   fixB a0 \b ->
---     integral g a0 t
---       ( fixB da0 \db ->
---           integral g da0 t (f b db)
---       )
+solve2
+  :: forall t a
+   . Field t
+  => Semiring a
+  => (((a -> t) -> t) -> a)
+  -> a
+  -> a
+  -> Poll t
+  -> (Poll a -> Poll a -> Poll a)
+  -> Poll a
+solve2 g a0 da0 t f =
+  fixB a0 \b ->
+    integral g a0 t
+      ( fixB da0 \db ->
+          integral g da0 t (f b db)
+      )
 
 -- | Solve a second order differential equation.
 -- |
 -- | This function is a simpler version of `solve2` where the function being
 -- | integrated takes values in the same field used to represent time.
--- solve2'
---   :: forall a
---    . Field a
---   => a
---   -> a
---   -> Poll a
---   -> (Poll a -> Poll a -> Poll a)
---   -> Poll a
--- solve2' = solve2 (_ $ identity)
+solve2'
+  :: forall a
+   . Field a
+  => a
+  -> a
+  -> Poll a
+  -> (Poll a -> Poll a -> Poll a)
+  -> Poll a
+solve2' = solve2 (_ $ identity)
 
 -- | Animate a `Poll` by providing a rendering function.
 animate
@@ -423,21 +426,9 @@ sampleOnRight
   => APoll event a
   -> APoll event (a -> b)
   -> APoll event b
--- sampleOnRight (APoll (Tuple a b)) (APoll (Tuple x y)) = case Array.last a, x of
---   -- we have nothing to store from the left
---   Nothing, _ -> APoll $ Tuple [] $ (b `EClass.sampleOnRight` y)
---   -- store the left for all of the pure values plus the first value from the right
---   -- unless it is superceded by the left
---   Just v, a -> APoll $ Tuple (map (_ $ v) a) $ ((pure v <|> b) `EClass.sampleOnRight` y)
 sampleOnRight a b = APoll $ Tuple [] (toPoll a `EClass.sampleOnRight` toPoll b)
 
 sampleOnLeft :: forall event a b. Apply event => Poll.Pollable Poll.APoll event event => Poll.Pollable APoll event event => IsEvent event => APoll event a -> APoll event (a -> b) -> APoll event b
--- sampleOnLeft (APoll (Tuple _ b)) (APoll (Tuple x y)) = case Array.last x of
---   Nothing -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` y)
---   -- because we are sampling on the left, a pure emission on the left
---   -- will never be picked up because by the time the left emits
---   -- the right still hasn't emitted yet
---   Just w -> APoll $ Tuple [] $ (b `EClass.sampleOnLeft` (pure w <|> y))
 sampleOnLeft a b = APoll $ Tuple [] (toPoll a `EClass.sampleOnLeft` toPoll b)
 
 fix
@@ -448,18 +439,7 @@ fix
   => IsEvent event
   => (APoll event a -> APoll event a)
   -> APoll event a
-fix f = -- APoll $ Tuple [] $ EClass.fix (dimap (\y -> APoll $ Tuple [] y) toPoll f)
-
-  -- APoll $ Tuple [] $ Poll.poll \e -> (\(Tuple a ff) -> ff a) <$> EClass.fix \ee -> do
-  --   let (APoll (Tuple x y)) = f (sham (fst <$> ee))
-  --   let _ = spy "foo" x
-  --   oneOf ([ Poll.sampleBy Tuple y e ] <> map ((\i -> Tuple i <$> e) >>> EClass.once) x)
-  -- 
-  -- APoll $ Tuple [] $ Poll.poll \e -> (\(Tuple a ff) -> ff a) <$> EClass.fix \ee -> do
-  --   let ugh = dimap (\y -> APoll $ Tuple [] y) toPoll f
-  --   let y = ugh (Poll.sham (fst <$> ee))
-  --   Poll.sampleBy Tuple y e
-  APoll $ Tuple [] $ EClass.fix (dimap (\y -> APoll $ Tuple [] y) toPoll f)
+fix f = APoll $ Tuple [] $ EClass.fix (dimap (\y -> APoll $ Tuple [] y) toPoll f)
 
 once :: forall event a. Apply event => Poll.Pollable APoll event event => Poll.Pollable Poll.APoll event event => IsEvent event => APoll event a -> APoll event a
 once i = APoll $ Tuple [] $ EClass.once (toPoll i)
@@ -503,8 +483,8 @@ rant
    . Poll a
   -> ST Global { poll :: Poll a, unsubscribe :: ST Global Unit }
 rant (APoll (Tuple _ i)) = do
-  { poll, unsubscribe } <- Poll.rant i
-  pure $ { poll: APoll (Tuple [] poll), unsubscribe }
+  { poll:p, unsubscribe } <- Poll.rant i
+  pure $ { poll: APoll (Tuple [] p), unsubscribe }
 
 deflect
   :: forall a
@@ -526,7 +506,3 @@ keepLatest
   => APoll event (APoll event a)
   -> APoll event a
 keepLatest p = APoll (Tuple [] $ EClass.keepLatest (toPoll (map toPoll p)))
--- keepLatest (APoll (Tuple x y)) =
-  -- APoll (Tuple (x >>= (c >>> fst)) (EClass.keepLatest (map (alt (fromMaybe empty (map (c >>> snd) $ Array.last x))) (map toPoll y))))
-  --   where
-  --   c = coerce :: _ -> Tuple (Array a) (Poll.APoll event a)
