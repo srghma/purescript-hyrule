@@ -54,14 +54,13 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..))
 import Data.Profunctor (dimap)
 import Data.These (These(..))
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import FRP.Event (class IsEvent, Event, fold, justMany, makeEvent, subscribe)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class as EClass
 import FRP.Poll.Unoptimized as Poll
-import Safe.Coerce (coerce)
 
 -- | `APoll` is the more general type of `Poll`, which is parameterized
 -- | over some underlying `event` type.
