@@ -27,10 +27,9 @@ import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, once, keepLatest, sampleOnRight)
 import FRP.Event.Time (debounce, withTime)
-import FRP.OptimizedPoll as OPoll
-import FRP.Poll (deflect, derivative', fixB, gate, integral', poll, rant, sample, sample_, stRefToPoll)
-import FRP.Poll as Poll
-import Test.Spec (describe, it, itOnly)
+import FRP.Poll as OptimizedPoll
+import FRP.Poll.Unoptimized as UnoptimizedPoll
+import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
@@ -400,7 +399,7 @@ suite8 name { setup, prime, create, toEvent, underTest } = do
       testing.push 89
       liftST (STRef.read r) >>= shouldEqual [96,95,94,93]
       liftST u
-    it "should handle poll fold 1" $ liftEffect do
+    it "should handle UnoptimizedPoll.poll fold 1" $ liftEffect do
       r <- liftST $ STRef.new []
       ep <- liftST setup
       testing <- liftST create
@@ -418,7 +417,7 @@ suite8 name { setup, prime, create, toEvent, underTest } = do
       testing.push 89
       liftST (STRef.read r) >>= shouldEqual [ 150 ]
       liftST u
-    it "should handle poll fold 2" $ liftEffect do
+    it "should handle UnoptimizedPoll.poll fold 2" $ liftEffect do
       r <- liftST $ STRef.new []
       ep <- liftST setup
       testing <- liftST create
@@ -470,18 +469,18 @@ main :: Effect Unit
 main = do
   launchAff_
     $ runSpec [ consoleReporter ] do
-        suite1 "Poll"
+        suite1 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite1 "OPoll"
+        suite1 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite1 "Event"
@@ -491,18 +490,18 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite2 "Poll"
+        suite2 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite2 "OPoll"
+        suite2 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite2 "Event"
@@ -512,18 +511,18 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite3 "Poll"
+        suite3 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite3 "OPoll"
+        suite3 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite3 "Event"
@@ -533,20 +532,20 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite4 "Poll"
+        suite4 "UnoptimizedPoll"
           { setup: Event.create
           , desc: "should distribute apply to all behaviors"
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite4 "OPoll"
+        suite4 "OptimizedPoll"
           { setup: Event.create
           , desc: "should distribute apply to all behaviors"
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite4 "Event"
@@ -564,18 +563,18 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite5 "Poll"
+        suite5 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite5 "OPoll"
+        suite5 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite6 "Event"
@@ -585,18 +584,18 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite6 "Poll"
+        suite6 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite6 "OPoll"
+        suite6 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite7 "Event"
@@ -607,76 +606,76 @@ main = do
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
           }
-        suite7 "Poll"
+        suite7 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , mailbox: Poll.mailbox
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , mailbox: UnoptimizedPoll.mailbox
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite7 "OPoll"
+        suite7 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , mailbox: Poll.mailbox
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , mailbox: UnoptimizedPoll.mailbox
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite8 "Poll"
+        suite8 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite8 "OPoll"
+        suite8 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite9 "Poll"
+        suite9 "UnoptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: Poll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
-        suite9 "OPoll"
+        suite9 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
-          , create: OPoll.create
-          , toEvent: \b ep -> sample_ b ep.event
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         describe "Unique to Poll" do
-          it "should obliterate purity when on a rant" do
+          it "should obliterate purity when on a UnoptimizedPoll.rant" do
             { event, push } <- liftST $ Event.create
             rf <- liftEffect $ Ref.new []
-            unsub <- liftST $ Event.subscribe (sample_ (pure 42 :: Poll.Poll Int) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (pure 42 :: UnoptimizedPoll.Poll Int) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               push unit
               o <- Ref.read rf
               o `shouldEqual` [ 42 ]
               liftST $ unsub
               Ref.write [] rf
-            ranting <- liftST $ rant (pure 42)
+            ranting <- liftST $ UnoptimizedPoll.rant (pure 42)
             for_ (0 .. 1) \_ -> do
-              unsub2 <- liftST $ Event.subscribe (sample_ ranting.poll event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub2 <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ ranting.poll event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 o <- Ref.read rf
                 o `shouldEqual` []
                 liftST $ unsub2
                 Ref.write [] rf
-          it "should mix together polling and purity" do
+          it "should mix together UnoptimizedPoll.polling and purity" do
             { event, push } <- liftST Event.create
             rf <- liftEffect $ Ref.new []
-            pl <- liftST Poll.create
+            pl <- liftST UnoptimizedPoll.create
             for_ (0 .. 1) \_ -> do
-              unsub <- liftST $ Event.subscribe (sample_ (pure 42 <|> pure 42 <|> pl.poll) event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (pure 42 <|> pure 42 <|> pl.poll) event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 o <- Ref.read rf
@@ -686,11 +685,11 @@ main = do
                 oo `shouldEqual` [ 43, 42, 42 ]
                 liftST $ unsub
                 Ref.write [] rf
-          it "should give canned responses and hang up on deflect" do
+          it "should give canned responses and hang up on UnoptimizedPoll.deflect" do
             { event, push } <- liftST Event.create
             rf <- liftEffect $ Ref.new []
-            pl <- liftST Poll.create
-            unsub <- liftST $ Event.subscribe (sample_ (pure 42 <|> pure 42 <|> pl.poll) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            pl <- liftST UnoptimizedPoll.create
+            unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (pure 42 <|> pure 42 <|> pl.poll) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               push unit
               o <- Ref.read rf
@@ -700,23 +699,23 @@ main = do
               oo `shouldEqual` [ 43, 42, 42 ]
               liftST $ unsub
               Ref.write [] rf
-            deflecting <- liftST $ deflect (pure 42 <|> pure 42 <|> pl.poll)
+            deflecting <- liftST $ UnoptimizedPoll.deflect (pure 42 <|> pure 42 <|> pl.poll)
             for_ (0 .. 1) \_ -> do
-              unsub2 <- liftST $ Event.subscribe (sample_ deflecting event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub2 <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ deflecting event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 o <- Ref.read rf
                 o `shouldEqual` [ 42, 42 ]
                 pl.push 43
                 oo <- Ref.read rf
-                -- deflected, so ignores incoming stuff
+                -- UnoptimizedPoll.deflected, so ignores incoming stuff
                 oo `shouldEqual` [ 42, 42 ]
                 liftST $ unsub2
                 Ref.write [] rf
           it "should have a fixed point with an initial value" do
             { event, push } <- liftST $ Event.create
             rf <- liftEffect $ Ref.new []
-            unsub <- liftST $ Event.subscribe (sample_ (fixB 0 (map (add 1))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.fixB 0 (map (add 1))) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               push unit
               push unit
@@ -729,7 +728,7 @@ main = do
             r <- liftST $ STRef.new []
             switchDriver <- liftST $ Event.create
             poller <- liftST $ Event.create
-            u <- liftST $ subscribe (sample_ (Poll.switcher empty switchDriver.event) poller.event) \i ->
+            u <- liftST $ subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.switcher empty switchDriver.event) poller.event) \i ->
               liftST $ void $ STRef.modify (Array.cons i) r
             poller.push unit
             switchDriver.push (pure 42)
@@ -745,12 +744,12 @@ main = do
             v `shouldEqual` [ 45, 45, 43, 42, 42 ]
             liftST u
 
-          it "should gate when gate is used" $ liftEffect do
+          it "should UnoptimizedPoll.gate when UnoptimizedPoll.gate is used" $ liftEffect do
             eio <- liftST $ Event.create
             r <- liftST $ STRef.new false
             n <- liftST $ STRef.new 0
-            let b = stRefToPoll r
-            _ <- liftST $ Event.subscribe (gate b eio.event) \_ ->
+            let b = UnoptimizedPoll.stRefToPoll r
+            _ <- liftST $ Event.subscribe (UnoptimizedPoll.gate b eio.event) \_ ->
               liftST $ void $ STRef.modify (add 1) n
             do
               eio.push unit
@@ -771,7 +770,7 @@ main = do
             it "should give some sane approximation" do
               { event, push } <- liftST $ Event.create
               rf <- liftEffect $ Ref.new []
-              unsub <- liftST $ Event.subscribe (sample_ (derivative' (fixB 1.0 (map (add 1.0))) (fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.derivative' (UnoptimizedPoll.fixB 1.0 (map (add 1.0))) (UnoptimizedPoll.fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 push unit
@@ -781,11 +780,11 @@ main = do
                 o `shouldEqual` [ 54.0, 18.0, 6.0, 0.0 ]
                 liftST $ unsub
 
-          describe "integral" do
+          describe "UnoptimizedPoll.integral" do
             it "should give some sane approximation" do
               { event, push } <- liftST $ Event.create
               rf <- liftEffect $ Ref.new []
-              unsub <- liftST $ Event.subscribe (sample_ (integral' 42.0 (fixB 1.0 (map (add 1.0))) (fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub <- liftST $ Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.integral' 42.0 (UnoptimizedPoll.fixB 1.0 (map (add 1.0))) (UnoptimizedPoll.fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 push unit
@@ -796,10 +795,10 @@ main = do
                 liftST $ unsub
 
         describe "Unique to Event" do
-          -- this test shows how a poll based framework could be used
-          -- to emit html, where the webpage is a poll and it is
+          -- this test shows how a UnoptimizedPoll.poll based framework could be used
+          -- to emit html, where the webpage is a UnoptimizedPoll.poll and it is
           -- rendered based on an initial event
-          it "should fire in order for polls" $ liftEffect do
+          it "should fire in order for UnoptimizedPoll.polls" $ liftEffect do
             r <- liftST $ STRef.new []
             ep <- liftST $ Event.create
             let
@@ -807,24 +806,24 @@ main = do
               -- before, we could emit and then do some more work
               -- now, however, emission is last
               -- we need to fix that
-              bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
+              bhv c = UnoptimizedPoll.poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
                 justOne $ f0 "div"
                 justNone do
                   void
                     $ s0
-                        ( sample
-                            ( poll \e1 ->
+                        ( UnoptimizedPoll.sample
+                            ( UnoptimizedPoll.poll \e1 ->
                                 merge
-                                  [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
-                                  , sample c e1
-                                  , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
+                                  [ UnoptimizedPoll.sample (UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
+                                  , UnoptimizedPoll.sample c e1
+                                  , UnoptimizedPoll.sample (UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
                                   ]
                             )
                             e0
                         )
                     $ justOne
-            u <- liftST $ subscribe (sample (bhv (bhv (bhv ((bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3")))))) ep.event) \i ->
+            u <- liftST $ subscribe (UnoptimizedPoll.sample (bhv (bhv (bhv ((bhv $ UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3")))))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
             v <- liftST $ STRef.read r
@@ -858,28 +857,28 @@ main = do
                 "b"
               ]
             liftST u
-          it "should fire in order for polls 2" $ liftEffect do
+          it "should fire in order for UnoptimizedPoll.polls 2" $ liftEffect do
             r <- liftST $ STRef.new []
             ep <- liftST $ Event.create
             let
-              bhv c = poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
+              bhv c = UnoptimizedPoll.poll \e0 -> makeEvent \s0 -> s0 e0 \f0 -> do
                 -- first element
                 justOne $ f0 "div"
                 justNone $ void
                   $ s0
-                      ( sample
-                          ( poll \e1 ->
+                      ( UnoptimizedPoll.sample
+                          ( UnoptimizedPoll.poll \e1 ->
                               merge
-                                [ sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
-                                , sample c e1
-                                , sample (poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
-                                , sample c e1
+                                [ UnoptimizedPoll.sample (UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "span")) e1
+                                , UnoptimizedPoll.sample c e1
+                                , UnoptimizedPoll.sample (UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "b")) e1
+                                , UnoptimizedPoll.sample c e1
                                 ]
                           )
                           e0
                       )
                   $ justOne
-            u <- liftST $ subscribe (sample (bhv (bhv $ poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3"))) ep.event) \i ->
+            u <- liftST $ subscribe (UnoptimizedPoll.sample (bhv (bhv $ UnoptimizedPoll.poll \e2 -> makeEvent \s2 -> s2 e2 \f2 -> justOne (f2 "h3"))) ep.event) \i ->
               liftST $ void $ STRef.modify (flip Array.snoc i) r
             ep.push identity
             v <- liftST $ STRef.read r
