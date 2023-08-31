@@ -26,8 +26,6 @@ module FRP.Event
   , module Class
   , subscribe
   , subscribeO
-  , subscribePure
-  , subscribePureO
   ) where
 
 import Prelude
@@ -52,7 +50,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Effect (Effect, foreachE)
-import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, runEffectFn1, runEffectFn2)
+import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
@@ -285,39 +283,24 @@ fix f =
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
+
+-- | Subscribe to an `Event` by providing a callback.
+-- |
+-- | `subscribe` returns a canceller function.
 subscribe
   :: forall a
    . Event a
   -> (a -> Effect Unit)
-  -> ST Global (ST Global Unit)
-subscribe (Event e) k = runSTFn2 e false (mkEffectFn1 k)
+  -> Effect (Effect Unit)
+subscribe (Event e) k = liftST $ map liftST $ runSTFn2 e false (mkEffectFn1 k)
 
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
 subscribeO
   :: forall a
-   . STFn2 (Event a) (EffectFn1 a Unit) Global (ST Global Unit)
-subscribeO = mkSTFn2 \(Event e) k -> runSTFn2 e false k
-
-subscribePureO
-  :: forall a
-   . STFn2 (Event a) (STFn1 a Global Unit) Global (ST Global Unit)
-subscribePureO = mkSTFn2 \(Event e) k -> (runSTFn2 e true (stPusherToEffectPusher k))
-  where
-  stPusherToEffectPusher :: forall aa. (STFn1 a Global Unit) -> EffectFn1 aa Unit
-  stPusherToEffectPusher = unsafeCoerce
-
-subscribePure
-  :: forall a
-   . Event a
-  -> (a -> ST Global Unit)
-  -> ST Global (ST Global Unit)
-subscribePure (Event e) k = runSTFn2 e true (mkEffectFn1 (stPusherToEffectPusher k))
-  where
-
-  stPusherToEffectPusher :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
-  stPusherToEffectPusher = unsafeCoerce
+   . EffectFn2 (Event a) (EffectFn1 a Unit) (Effect Unit)
+subscribeO = mkEffectFn2 \(Event e) k -> liftST $ map liftST $ runSTFn2 e false k
 
 justOne :: forall a. a -> EventfulProgram a
 justOne a = liftF (Compose (pure (Tuple [ a ] unit)))
@@ -381,9 +364,9 @@ foreign import objHack :: forall a. ST Global (ObjHack a)
 foreign import insertObjHack :: forall a. STFn3 Int a (ObjHack a) Global Unit
 foreign import deleteObjHack :: forall a. STFn2 Int (ObjHack a) Global Unit
 
-memoize :: forall a. Event a -> ST Global { event :: Event a, unsubscribe :: ST Global Unit }
+memoize :: forall a. Event a -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 memoize e = do
-  { event, push } <- create
+  { event, push } <- liftST create
   unsubscribe <- subscribe e push
   pure { event, unsubscribe }
 

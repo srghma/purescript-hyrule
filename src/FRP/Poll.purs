@@ -39,7 +39,6 @@ import Prelude
 
 import Control.Alt (class Alt, alt, (<|>))
 import Control.Apply (lift2)
-import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as STRef
@@ -96,7 +95,6 @@ instance applyAPoll :: (Alt event, Apply event, IsEvent event, Poll.Pollable Pol
   --   Just x, Nothing -> APoll $ Tuple [] $ ((pure x <|> f) <*> a)
   --   Just x, Just y -> APoll $ Tuple (map (x $ _) aa) $ (((pure x <|> f) `EClass.sampleOnRightOp` a) <|> (f `EClass.sampleOnLeftOp` (pure y <|> a)))
   apply a b = APoll $ Tuple [] (toPoll a <*> toPoll b)
-
 
 instance applicativeAPoll :: (Apply event, Plus event, IsEvent event, Poll.Pollable Poll.APoll event event) => Applicative (APoll event) where
   pure a = APoll (Tuple [ a ] empty)
@@ -376,10 +374,10 @@ animate
   -> Effect (Effect Unit)
 animate scene render = do
   { event, unsubscribe } <- animationFrame
-  u2 <- liftST $ subscribe (Poll.sample_ scene event) render
+  u2 <- subscribe (Poll.sample_ scene event) render
   pure do
     unsubscribe
-    liftST u2
+    u2
 
 -- | Turn an ST Ref into a poll
 stRefToPoll :: STRef.STRef Global ~> Poll
@@ -483,7 +481,7 @@ rant
    . Poll a
   -> ST Global { poll :: Poll a, unsubscribe :: ST Global Unit }
 rant (APoll (Tuple _ i)) = do
-  { poll:p, unsubscribe } <- Poll.rant i
+  { poll: p, unsubscribe } <- Poll.rant i
   pure $ { poll: APoll (Tuple [] p), unsubscribe }
 
 deflect
