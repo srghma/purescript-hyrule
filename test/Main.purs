@@ -13,6 +13,7 @@ import Data.Array as Array
 import Data.Filterable (filter)
 import Data.Foldable (oneOf, oneOfMap, sequence_)
 import Data.Functor.Compose (Compose(..))
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
 import Data.Traversable (foldr, for_, sequence)
@@ -465,6 +466,23 @@ suite9 name { setup, prime, create, toEvent, underTest } = do
       v `shouldEqual` ([ 51, 50, 104, 45 ] >>= replicate 3)
       u
 
+suite10 name { setup, prime, create, toEvent, underTest } = do
+  describe name do
+    it "should mapWithIndex" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing0 <- liftST create
+      let toTest = mapWithIndex Tuple (pure 42 <|> underTest testing0)
+      u <- subscribe (toEvent toTest ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      -- noop
+      testing0.push 8
+      -- noop
+      testing0.push 15
+      v <- liftST $ STRef.read r
+      v `shouldEqual` (Array.reverse [ Tuple 0 42, Tuple 1 8, Tuple 2 15 ])
+      u
 main :: Effect Unit
 main = do
   launchAff_
@@ -644,6 +662,20 @@ main = do
           , underTest: \testing -> testing.poll
           }
         suite9 "OptimizedPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite10 "UnoptimizedPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: UnoptimizedPoll.create
+          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite10 "OptimizedPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create

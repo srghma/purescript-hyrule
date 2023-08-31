@@ -21,6 +21,7 @@
   , "refs"
   , "safe-coerce"
   , "st"
+  , "these"
   , "tuples"
   , "unsafe-coerce"
   , "unsafe-reference"
