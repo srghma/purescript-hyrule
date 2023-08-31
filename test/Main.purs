@@ -11,7 +11,7 @@ import Control.Plus (empty)
 import Data.Array (length, replicate, (..))
 import Data.Array as Array
 import Data.Filterable (filter)
-import Data.Foldable (oneOfMap, sequence_)
+import Data.Foldable (oneOf, oneOfMap, sequence_)
 import Data.Functor.Compose (Compose(..))
 import Data.JSDate (getTime, now)
 import Data.Profunctor (lcmap)
@@ -30,7 +30,7 @@ import FRP.Event.Time (debounce, withTime)
 import FRP.OptimizedPoll as OPoll
 import FRP.Poll (deflect, derivative', fixB, gate, integral', poll, rant, sample, sample_, stRefToPoll)
 import FRP.Poll as Poll
-import Test.Spec (describe, it)
+import Test.Spec (describe, it, itOnly)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
@@ -364,42 +364,108 @@ suite7 name { setup, prime, create, mailbox, toEvent, underTest } = do
 
 suite8 name { setup, prime, create, toEvent, underTest } = do
   describe name do
+    it "should handle inside of fold 1" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing <- liftST create
+      let
+        event' = sampleOnRight ((once (underTest testing) $> 0)) ((flip add) <$> (underTest testing))
+      u <- liftST $ subscribe (toEvent event' ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      testing.push 1
+      liftST (STRef.read r) >>= shouldEqual [ 1 ]
+      liftST $ void $ STRef.write [] r
+      testing.push 55
+      liftST (STRef.read r) >>= shouldEqual [ 55 ]
+      liftST $ void $ STRef.write [] r
+      testing.push 89
+      liftST (STRef.read r) >>= shouldEqual [ 89 ]
+      liftST u
+    it "should handle inside of fold 2" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing <- liftST create
+      let
+        event' = sampleOnRight ((once (underTest testing) $> 0)) (oneOfMap (\x -> (add x >>> add) <$> (underTest testing)) [ 4, 5, 6, 7 ])
+      u <- liftST $ subscribe (toEvent event' ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      testing.push 1
+      liftST (STRef.read r) >>= shouldEqual [ 8,7,6,5 ]
+      liftST $ void $ STRef.write [] r
+      testing.push 55
+      liftST (STRef.read r) >>= shouldEqual [ 62,61,60,59 ]
+      liftST $ void $ STRef.write [] r
+      testing.push 89
+      liftST (STRef.read r) >>= shouldEqual [96,95,94,93]
+      liftST u
     it "should handle poll fold 1" $ liftEffect do
       r <- liftST $ STRef.new []
       ep <- liftST setup
       testing <- liftST create
       let
-        event' = fold (\b _ -> b + 1) 0 ((pure unit) <|> underTest testing)
+        event' = fold (\b a -> b + a) 0 ((pure 5) <|> underTest testing)
       u <- liftST $ subscribe (toEvent event' ep) \i ->
         liftST $ void $ STRef.modify (Array.cons i) r
       prime ep
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [ 2, 1 ]
+      testing.push 1
+      liftST (STRef.read r) >>= shouldEqual [ 6, 5 ]
       liftST $ void $ STRef.write [] r
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [ 3 ]
+      testing.push 55
+      liftST (STRef.read r) >>= shouldEqual [ 61 ]
       liftST $ void $ STRef.write [] r
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [ 4 ]
+      testing.push 89
+      liftST (STRef.read r) >>= shouldEqual [ 150 ]
       liftST u
     it "should handle poll fold 2" $ liftEffect do
       r <- liftST $ STRef.new []
       ep <- liftST setup
       testing <- liftST create
       let
-        event' = fold (\b _ -> b + 1) 0 (oneOfMap pure [unit, unit, unit] <|> underTest testing)
+        event' = fold (\b a -> b + a) 0 (oneOfMap pure [ 4, 5, 6 ] <|> underTest testing)
       u <- liftST $ subscribe (toEvent event' ep) \i ->
         liftST $ void $ STRef.modify (Array.cons i) r
       prime ep
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [4,3,2,1]
+      testing.push 1
+      liftST (STRef.read r) >>= shouldEqual [ 16, 15, 9, 4 ]
       liftST $ void $ STRef.write [] r
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [ 5 ]
+      testing.push 55
+      liftST (STRef.read r) >>= shouldEqual [ 71 ]
       liftST $ void $ STRef.write [] r
-      testing.push unit
-      liftST (STRef.read r) >>= shouldEqual [ 6 ]
+      testing.push 89
+      liftST (STRef.read r) >>= shouldEqual [ 160 ]
       liftST u
+
+suite9 name { setup, prime, create, toEvent, underTest } = do
+  describe name do
+    it "should sampleOnRight correctly with pure" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing0 <- liftST create
+      testing1 <- liftST create
+      let toTest = sampleOnRight (underTest testing0) (oneOf (replicate 3 (add <$> (underTest testing1))))
+      u <- liftST $ subscribe (toEvent toTest ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      -- noop
+      testing1.push 1
+      -- noop
+      testing0.push 3
+      -- 45
+      testing1.push 42
+      -- 104
+      testing1.push 101
+      -- no op
+      testing0.push 42
+      -- 50
+      testing1.push 8
+      -- 51
+      testing1.push 9
+      v <- liftST $ STRef.read r
+      v `shouldEqual` ([ 51, 50, 104, 45 ] >>= replicate 3)
+      liftST u
+
 main :: Effect Unit
 main = do
   launchAff_
@@ -565,6 +631,20 @@ main = do
           , underTest: \testing -> testing.poll
           }
         suite8 "OPoll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: OPoll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite9 "Poll"
+          { setup: Event.create
+          , prime: \ep -> ep.push unit
+          , create: Poll.create
+          , toEvent: \b ep -> sample_ b ep.event
+          , underTest: \testing -> testing.poll
+          }
+        suite9 "OPoll"
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OPoll.create
