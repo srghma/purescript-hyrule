@@ -1,6 +1,8 @@
 module FRP.Poll
   ( APoll
   , Poll
+  , PollIO
+  , PurePollIO
   , animate
   , create
   , createPure
@@ -47,13 +49,11 @@ import Data.Either (Either, either)
 import Data.Filterable (eitherBool, maybeBool)
 import Data.Filterable as Filterable
 import Data.Foldable (oneOf, oneOfMap)
-import Data.Function (applyFlipped)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..))
 import Data.Profunctor (dimap)
 import Data.Tuple (Tuple(..), fst, snd)
-import Debug (spy)
 import Effect (Effect)
 import FRP.Event (class IsEvent, Event, fold, justMany, makeEvent, subscribe)
 import FRP.Event as Event
@@ -490,7 +490,7 @@ deflect
   :: forall a
    . Poll a
   -> ST Global (Poll a)
-deflect (APoll (Tuple a b)) = pure (APoll (Tuple a empty))
+deflect (APoll (Tuple a _)) = pure (APoll (Tuple a empty))
 
 data KeepLatestOrder event a b
   = KeepLatestStart (APoll event a) (a -> b)
