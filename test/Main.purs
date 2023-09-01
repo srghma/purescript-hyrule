@@ -498,7 +498,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite1 "Event"
@@ -519,7 +519,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite2 "Event"
@@ -540,7 +540,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite3 "Event"
@@ -563,7 +563,7 @@ main = do
           , desc: "should distribute apply to all behaviors"
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite4 "Event"
@@ -592,7 +592,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite6 "Event"
@@ -613,7 +613,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite7 "Event"
@@ -651,7 +651,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite9 "UnoptimizedPoll"
@@ -665,7 +665,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         suite10 "UnoptimizedPoll"
@@ -679,7 +679,7 @@ main = do
           { setup: Event.create
           , prime: \ep -> ep.push unit
           , create: OptimizedPoll.create
-          , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
+          , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
           }
         describe "Unique to Poll" do
