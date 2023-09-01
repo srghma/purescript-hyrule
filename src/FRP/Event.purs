@@ -33,6 +33,7 @@ import Prelude
 import Control.Alternative (class Alt, class Plus)
 import Control.Apply (lift2)
 import Control.Monad.Free (Free, liftF, resume)
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
@@ -331,12 +332,12 @@ makeEvent i = Event $ mkSTFn2 \tf k ->
     c <- runSTFn2 e tf $ mkEffectFn1 \ii -> do
       let
         go = resume >>> case _ of
-          Right _ -> pure unit
+          Right _ -> pure $ Done unit
           Left (Compose prog) -> do
             Tuple a rest <- liftST prog
             foreachE a (runEffectFn1 k)
-            go rest
-      go (kx ii)
+            pure $ Loop rest
+      tailRecM go (kx ii)
     pure c
 
 newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
