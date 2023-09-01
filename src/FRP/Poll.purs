@@ -51,7 +51,7 @@ import Data.Filterable as Filterable
 import Data.Foldable (foldr, oneOf, oneOfMap)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Profunctor (dimap)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -566,4 +566,5 @@ keepLatest
   => Poll.Pollable APoll event event
   => APoll event (APoll event a)
   -> APoll event a
+keepLatest (OnlyPure p) = fromMaybe empty (Array.last p)
 keepLatest p = pollFromPoll $ EClass.keepLatest (toPoll (map toPoll p))
