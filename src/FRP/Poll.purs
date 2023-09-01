@@ -513,8 +513,8 @@ deflect
   :: forall a
    . Poll a
   -> ST Global (Poll a)
-deflect (APoll (Both a _)) = pure (APoll (This a))
-deflect (APoll (That _)) = pure (APoll (This []))
+deflect (APoll (Both a b)) =  APoll <<< Both a <$> Poll.deflect b
+deflect (APoll (That b)) = APoll <<< That <$> Poll.deflect b
 deflect (APoll (This a)) = pure (APoll (This a))
 
 data KeepLatestOrder event a b
