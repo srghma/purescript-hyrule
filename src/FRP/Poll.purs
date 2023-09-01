@@ -43,6 +43,7 @@ import Prelude
 
 import Control.Alt (class Alt, alt, (<|>))
 import Control.Apply (lift2)
+import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as STRef
@@ -55,11 +56,11 @@ import Data.Foldable (foldr, oneOfMap)
 import Data.Function (applyFlipped)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor (dimap)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), uncurry)
 import Effect (Effect)
-import FRP.Event (class IsEvent, Event, fold, justMany, makeEvent, subscribe)
+import FRP.Event (class IsEvent, Event, fold, justMany, justNone, justOne, makeEvent, subscribe)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class as EClass
@@ -72,7 +73,6 @@ data Poll a
   | OnlyPoll (Poll.APoll Event a)
   | OnlyEvent (Event a)
   | PureAndPoll (Array a) (Poll.APoll Event a)
-
 
 instance functorAPoll :: Functor Poll where
   map f (PureAndPoll x y) = PureAndPoll (map f x) (map f y)
@@ -172,7 +172,7 @@ instance Plus Poll where
 merge :: forall a. Array (Poll a) → Poll a
 merge a = case foldr go { l: [], m: [], r: [] } a of
   { l, m: [], r: [] } -> OnlyPure l
-  { l:[], m, r: [] } -> OnlyEvent (Event.merge m)
+  { l: [], m, r: [] } -> OnlyEvent (Event.merge m)
   { l: [], m: [], r } -> OnlyPoll (Poll.merge r)
   -- todo: is it problematic that this is out of l2r order?
   { l, m, r } -> PureAndPoll l (Poll.sham (Event.merge m) <|> Poll.merge r)
@@ -192,7 +192,7 @@ sham :: Event ~> Poll
 sham = pollFromEvent
 
 -- | Turn a function over events into a function over polls.
-dredge :: forall a b.  (Event a -> Event b) -> Poll a -> Poll b
+dredge :: forall a b. (Event a -> Event b) -> Poll a -> Poll b
 dredge f ea = pollFromPoll (Poll.dredge f (toPoll ea))
 
 -- | Switch `Poll`s based on an `Event`.
@@ -204,7 +204,7 @@ gateBy :: forall p a. (p -> a -> Boolean) -> Poll p -> Event a -> Event a
 gateBy f ps xs = Filterable.compact (sampleBy (\p x -> if f p x then Just x else Nothing) ps xs)
 
 -- | Filter an `Event` by the boolean value of a `Poll`.
-gate :: forall a.Poll Boolean -> Event a -> Event a
+gate :: forall a. Poll Boolean -> Event a -> Event a
 gate = gateBy const
 
 -- | Integrate with respect to some measure of time.
@@ -421,7 +421,7 @@ sampleOnRight
 sampleOnRight (OnlyEvent a) (OnlyEvent b) = OnlyEvent (a `EClass.sampleOnRight` b)
 sampleOnRight a b = pollFromPoll (toPoll a `EClass.sampleOnRight` toPoll b)
 
-sampleOnLeft :: forall a b.  Poll a -> Poll (a -> b) -> Poll b
+sampleOnLeft :: forall a b. Poll a -> Poll (a -> b) -> Poll b
 sampleOnLeft (OnlyEvent a) (OnlyEvent b) = OnlyEvent (a `EClass.sampleOnLeft` b)
 sampleOnLeft a b = pollFromPoll (toPoll a `EClass.sampleOnLeft` toPoll b)
 
@@ -503,13 +503,44 @@ deflect (OnlyPoll b) = OnlyPoll <$> Poll.deflect b
 deflect (OnlyEvent _) = pure $ OnlyPure []
 deflect (OnlyPure a) = pure (OnlyPure a)
 
+keepLatest' :: forall a. Event (Poll a) -> Event a
+keepLatest' e = makeEvent \s -> do
+  cancelInner <- STRef.new (pure unit)
+  let
+    onPure p = do
+      justNone $ void $ liftST $ STRef.write (pure unit) cancelInner
+      justMany p
+    onPoll p = justNone do
+      ep <- Event.createPure
+      c <- s (Poll.sample p ep.event) justOne
+      ep.push identity
+      void $ liftST $ STRef.write c cancelInner
+  cancelOuter <-
+    s e \i -> do
+      justNone do
+        ci <- STRef.read cancelInner
+        ci
+      case i of
+        OnlyPure p -> onPure p
+        OnlyEvent ev ->
+          justNone do
+            c <- s ev justOne
+            void $ liftST $ STRef.write c cancelInner
+        OnlyPoll p -> onPoll p
+        PureAndPoll p q -> onPure p *> onPoll q
+  pure do
+    ci <- STRef.read cancelInner
+    ci
+    cancelOuter
+
 keepLatest
   :: forall a
    . Poll (Poll a)
   -> Poll a
 keepLatest (OnlyPure p) = fromMaybe empty (Array.last p)
-keepLatest p = pollFromPoll $ EClass.keepLatest (toPoll (map toPoll p))
-
+keepLatest (OnlyEvent e) = OnlyEvent $ keepLatest' e
+keepLatest (OnlyPoll p) = OnlyPoll $ Poll.poll \e -> map (uncurry ($)) $ keepLatest' $ Poll.sampleBy (\pl ff -> Tuple ff <$> pl) p e
+keepLatest (PureAndPoll l r) = keepLatest (OnlyPoll (maybe empty pure (Array.last l) <|> r))
 
 class Pollable pollable where
   -- | Sample a `Poll` on some `Event`.
@@ -524,6 +555,7 @@ instance Pollable Event where
   sample (OnlyPure x) ab = e
     where
     e = makeEvent \s -> s ab \f -> justMany (map f x)
+
 instance Pollable Poll where
   sample = EClass.sampleOnRight
 
@@ -532,5 +564,5 @@ sampleBy :: forall pollable a b c. Pollable pollable => Functor pollable => (a -
 sampleBy f b e = sample (map f b) (map applyFlipped e)
 
 -- | Sample a `Poll` on some `Event`, discarding the event's values.
-sample_ :: forall pollable a b. Pollable  pollable =>  Functor pollable => Poll a -> pollable b -> pollable a
+sample_ :: forall pollable a b. Pollable pollable => Functor pollable => Poll a -> pollable b -> pollable a
 sample_ = sampleBy const
