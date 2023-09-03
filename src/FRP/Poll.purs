@@ -20,6 +20,8 @@ module FRP.Poll
   , mailbox
   , merge
   , mergeMap
+  , mergePure
+  , mergeMapPure
   , poll
   , pollFromEvent
   , pollFromOptimizedRep
@@ -183,9 +185,14 @@ merge a = case foldr go { l: [], m: [], r: [] } a of
   go (OnlyPoll q) { l, m, r } = { l, m, r:  [ q ] <> r }
   go (PureAndPoll x y) { l, m, r } = { l: x <> l, m, r: [ y ] <> r }
 
--- mergeMap is perfunctory here
 mergeMap :: forall a b. (a -> Poll b) -> Array a → Poll b
 mergeMap f a = merge (map f a)
+
+mergeMapPure :: forall a b. (a -> b) -> Array a → Poll b
+mergeMapPure f a = OnlyPure (map f a)
+
+mergePure :: forall a. Array a → Poll a
+mergePure = OnlyPure
 
 -- | A poll where the answers are rigged by the nefarious `Event a`
 sham :: Event ~> Poll
