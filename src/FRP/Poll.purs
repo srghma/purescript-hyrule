@@ -178,10 +178,10 @@ merge a = case foldr go { l: [], m: [], r: [] } a of
   { l, m, r } -> PureAndPoll l (Poll.sham (Event.merge m) <|> Poll.merge r)
   where
 
-  go (OnlyPure q) { l, m, r } = { l: l <> q, m, r }
-  go (OnlyEvent q) { l, m, r } = { l, m: m <> [ q ], r }
-  go (OnlyPoll q) { l, m, r } = { l, m, r: r <> [ q ] }
-  go (PureAndPoll x y) { l, m, r } = { l: l <> x, m, r: r <> [ y ] }
+  go (OnlyPure q) { l, m, r } = { l:  q <> l, m, r }
+  go (OnlyEvent q) { l, m, r } = { l, m: [ q ] <> m, r }
+  go (OnlyPoll q) { l, m, r } = { l, m, r:  [ q ] <> r }
+  go (PureAndPoll x y) { l, m, r } = { l: x <> l, m, r: [ y ] <> r }
 
 -- mergeMap is perfunctory here
 mergeMap :: forall a b. (a -> Poll b) -> Array a → Poll b
