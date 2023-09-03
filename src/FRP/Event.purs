@@ -14,6 +14,8 @@ module FRP.Event
   , justNone
   , create
   , createPure
+  , createTagged
+  , createPureTagged
   , mailbox
   , mailbox'
   , mailboxPure
@@ -349,10 +351,15 @@ type EventIO a =
 
 -- | Create an event and a function which supplies a value to that event.
 create :: forall a. ST Global (EventIO a)
-create = create_
+create = create_ ""
 
+createTagged :: forall a. String -> ST Global (EventIO a)
+createTagged = create_
 createPure :: forall a. ST Global (PureEventIO a)
-createPure = unsafeCoerce create_
+createPure = unsafeCoerce $ create_ ""
+
+createPureTagged :: forall a. String -> ST Global (PureEventIO a)
+createPureTagged = unsafeCoerce create_
 
 type EventIOO i o =
   { event :: Event o
@@ -361,7 +368,7 @@ type EventIOO i o =
 
 data ObjHack (a :: Type)
 
-foreign import objHack :: forall a. ST Global (ObjHack a)
+foreign import objHack :: forall a. String -> ST Global (ObjHack a)
 foreign import insertObjHack :: forall a. STFn3 Int a (ObjHack a) Global Unit
 foreign import deleteObjHack :: forall a. STFn2 Int (ObjHack a) Global Unit
 
@@ -373,9 +380,9 @@ memoize e = do
 
 create_
   :: forall a
-   . ST Global (EventIO a)
-create_ = do
-  subscribers <- objHack
+   . String -> ST Global (EventIO a)
+create_ tag = do
+  subscribers <- objHack tag
   idx <- STRef.new 0
   pure
     { event:

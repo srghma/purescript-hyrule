@@ -23,8 +23,8 @@ export const fastForeachE = (as, f) => {
 /////////////////////////
 /////////////////////////
 
-export const objHack = () => {
-  return { r: false, q: [], m: [{}] };
+export const objHack = (tag) => () => {
+  return { r: false, q: [], m: [{}], tag };
 };
 
 export const insertObjHack = (k, v, o) => {
