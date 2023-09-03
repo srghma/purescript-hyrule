@@ -1,14 +1,13 @@
 module FRP.Poll
   ( Poll(..)
   , PollIO
-  , class Pollable
-  , sample
-  , sample_
-  , sampleBy
   , PurePollIO
   , animate
+  , class Pollable
   , create
   , createPure
+  , createTagged
+  , deflect
   , derivative
   , derivative'
   , dredge
@@ -20,14 +19,16 @@ module FRP.Poll
   , mailbox
   , merge
   , mergeMap
-  , mergePure
   , mergeMapPure
+  , mergePure
   , poll
   , pollFromEvent
   , pollFromOptimizedRep
   , pollFromPoll
   , rant
-  , deflect
+  , sample
+  , sampleBy
+  , sample_
   , sham
   , solve
   , solve'
@@ -39,7 +40,8 @@ module FRP.Poll
   , switcher
   , toPoll
   , unfold
-  ) where
+  )
+  where
 
 import Prelude
 
@@ -459,6 +461,13 @@ create = do
   { poll: p } <- rant (sham event)
   pure { poll: p, push }
 
+createTagged
+  :: forall a
+   . String -> ST Global (PollIO a)
+createTagged tag = do
+  { event, push } <- Event.createTagged tag
+  { poll: p } <- rant (sham event)
+  pure { poll: p, push }
 createPure
   :: forall a
    . ST Global (PurePollIO a)
