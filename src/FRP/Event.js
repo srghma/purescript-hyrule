@@ -1,4 +1,4 @@
-export const fastForeachThunk = (as) => {
+export const fastForeachThunkST = (as) => {
   for (var i = 0, l = as.length; i < l; i++) {
     as[i]();
   }

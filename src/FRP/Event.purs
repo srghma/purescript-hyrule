@@ -9,6 +9,8 @@ module FRP.Event
   , ProgramfulEvent
   , fastForeachE
   , fastForeachST
+  , fastForeachThunkST
+  , fastForeachThunkE
   , justOne
   , justOneM
   , justMany
@@ -138,7 +140,7 @@ merge f = Event $ mkSTFn2 \tf k -> do
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
-    runSTFn1 fastForeachThunk o
+    runSTFn1 fastForeachThunkST o
 
 -- | Merge together several events and map on the event. This has the same functionality
 -- | as `oneOf`, but it is faster and less prone to stack explosions.
@@ -151,7 +153,7 @@ mergeMap f0 f = Event $ mkSTFn2 \tf k -> do
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
-    runSTFn1 fastForeachThunk o
+    runSTFn1 fastForeachThunkST o
 
 instance plusEvent :: Plus Event where
   empty = Event (mkSTFn2 \_ _ -> pure (pure unit))
@@ -459,7 +461,9 @@ mailbox' = do
     }
 
 --
-foreign import fastForeachThunk :: STFn1 (Array (ST Global Unit)) Global Unit
+foreign import fastForeachThunkST :: STFn1 (Array (ST Global Unit)) Global Unit
+fastForeachThunkE :: EffectFn1 (Array (Effect Unit)) Unit
+fastForeachThunkE = unsafeCoerce fastForeachThunkST
 foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
 fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
 fastForeachST = unsafeCoerce fastForeachE
