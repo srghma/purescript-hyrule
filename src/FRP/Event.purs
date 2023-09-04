@@ -7,6 +7,8 @@ module FRP.Event
   , Subscriber(..)
   , EventfulProgram
   , ProgramfulEvent
+  , fastForeachE
+  , fastForeachST
   , justOne
   , justOneM
   , justMany
@@ -40,7 +42,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
-import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn2, runSTFn1, runSTFn2, runSTFn3)
+import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2, runSTFn3)
 import Data.Array (deleteBy)
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
@@ -52,7 +54,7 @@ import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Effect (Effect, foreachE)
+import Effect (Effect)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
 import Unsafe.Coerce (unsafeCoerce)
@@ -131,7 +133,7 @@ instance altEvent :: Alt Event where
 merge :: forall a. Array (Event a) → Event a
 merge f = Event $ mkSTFn2 \tf k -> do
   a <- STArray.new
-  ((unsafeCoerce :: (Array (Event a) -> ((Event a) -> Effect Unit) -> Effect Unit) -> Array (Event a) -> ((Event a) -> ST Global Unit) -> ST Global Unit) foreachE) f \(Event i) -> do
+  runSTFn2 fastForeachST f $ mkSTFn1 \(Event i) -> do
     u <- runSTFn2 i tf k
     void $ liftST $ STArray.push u a
   pure do
@@ -143,7 +145,7 @@ merge f = Event $ mkSTFn2 \tf k -> do
 mergeMap :: forall a b. (a -> Event b) -> Array a → Event b
 mergeMap f0 f = Event $ mkSTFn2 \tf k -> do
   a <- STArray.new
-  ((unsafeCoerce :: (Array a -> (a -> Effect Unit) -> Effect Unit) -> Array a -> (a -> ST Global Unit) -> ST Global Unit) foreachE) f \x -> do
+  runSTFn2 fastForeachST f $ mkSTFn1 \x -> do
     let (Event i) = f0 x
     u <- runSTFn2 i tf k
     void $ liftST $ STArray.push u a
@@ -337,7 +339,7 @@ makeEvent i = Event $ mkSTFn2 \tf k ->
           Right _ -> pure $ Done unit
           Left (Compose prog) -> do
             Tuple a rest <- liftST prog
-            foreachE a (runEffectFn1 k)
+            runEffectFn2 fastForeachE a k
             pure $ Loop rest
       tailRecM go (kx ii)
     pure c
@@ -459,6 +461,8 @@ mailbox' = do
 --
 foreign import fastForeachThunk :: STFn1 (Array (ST Global Unit)) Global Unit
 foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
+fastForeachST = unsafeCoerce fastForeachE
 foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
 
 makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
