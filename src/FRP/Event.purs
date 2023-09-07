@@ -56,7 +56,7 @@ import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Effect (Effect)
+import Effect (Effect, foreachE)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
 import Unsafe.Coerce (unsafeCoerce)
@@ -457,7 +457,7 @@ mailbox' = do
         o <- liftST $ STRef.read r
         case Map.lookup address o of
           Nothing -> pure unit
-          Just arr -> runEffectFn2 fastForeachE arr $ mkEffectFn1 \i -> runEffectFn1 i payload
+          Just arr -> foreachE arr \i -> runEffectFn1 i payload
     }
 
 --
