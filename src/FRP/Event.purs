@@ -458,6 +458,7 @@ mailbox' = do
         case Map.lookup address o of
           Nothing -> pure unit
           Just arr -> foreachE arr \i -> runEffectFn1 i payload
+        pure unit
     }
 
 --
