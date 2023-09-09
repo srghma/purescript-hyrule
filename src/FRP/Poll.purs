@@ -40,8 +40,7 @@ module FRP.Poll
   , switcher
   , toPoll
   , unfold
-  )
-  where
+  ) where
 
 import Prelude
 
@@ -76,16 +75,19 @@ data Poll a
   = OnlyPure (Array a)
   | OnlyPoll (Poll.APoll Event a)
   | OnlyEvent (Event a)
+  | PureAndEvent (Array a) (Event a)
   | PureAndPoll (Array a) (Poll.APoll Event a)
 
 instance functorAPoll :: Functor Poll where
   map f (PureAndPoll x y) = PureAndPoll (map f x) (map f y)
+  map f (PureAndEvent x y) = PureAndEvent (map f x) (map f y)
   map f (OnlyPure x) = OnlyPure (map f x)
   map f (OnlyEvent x) = OnlyEvent (map f x)
   map f (OnlyPoll y) = OnlyPoll (map f y)
 
 instance functorWithIndexAPoll :: FunctorWithIndex Int Poll where
   mapWithIndex f (PureAndPoll x y) = PureAndPoll (mapWithIndex f x) (EClass.mapAccum (\a b -> Tuple (a + 1) (f a b)) (Array.length x) y)
+  mapWithIndex f (PureAndEvent x y) = PureAndEvent (mapWithIndex f x) (EClass.mapAccum (\a b -> Tuple (a + 1) (f a b)) (Array.length x) y)
   mapWithIndex f (OnlyPure x) = OnlyPure (mapWithIndex f x)
   mapWithIndex f (OnlyEvent x) = OnlyEvent (mapWithIndex f x)
   mapWithIndex f (OnlyPoll y) = OnlyPoll (EClass.mapAccum (\a b -> Tuple (a + 1) (f a b)) (0) y)
@@ -135,6 +137,7 @@ poll f = OnlyPoll (Poll.poll f)
 
 toPoll :: Poll ~> Poll.Poll
 toPoll (PureAndPoll a b) = oneOfMap pure a <|> b
+toPoll (PureAndEvent a b) = oneOfMap pure a <|> Poll.sham b
 toPoll (OnlyEvent a) = Poll.sham a
 toPoll (OnlyPure a) = oneOfMap pure a
 toPoll (OnlyPoll b) = b
@@ -154,18 +157,31 @@ instance Alt Poll where
   alt (OnlyPure a) (OnlyPure x) = OnlyPure (a <> x)
   alt (OnlyPure a) (OnlyEvent y) = PureAndPoll a (Poll.sham y)
   alt (OnlyPure a) (OnlyPoll y) = PureAndPoll a y
+  alt (OnlyPure a) (PureAndEvent x y) = PureAndEvent (a <> x) y
   alt (OnlyPure a) (PureAndPoll x y) = PureAndPoll (a <> x) y
+  --
   alt (OnlyEvent b) (OnlyPure x) = PureAndPoll x (Poll.sham b)
   alt (OnlyEvent b) (OnlyEvent y) = OnlyEvent (alt b y)
   alt (OnlyEvent b) (OnlyPoll y) = OnlyPoll (alt (Poll.sham b) y)
+  alt (OnlyEvent b) (PureAndEvent x y) = PureAndEvent x (b <|> y)
   alt (OnlyEvent b) (PureAndPoll x y) = PureAndPoll x (alt (Poll.sham b) y)
+  --
   alt (OnlyPoll b) (OnlyPure x) = PureAndPoll x b
   alt (OnlyPoll b) (OnlyEvent y) = OnlyPoll (alt b $ Poll.sham y)
   alt (OnlyPoll b) (OnlyPoll y) = OnlyPoll (alt b y)
+  alt (OnlyPoll b) (PureAndEvent x y) = PureAndPoll x (alt b (Poll.sham y))
   alt (OnlyPoll b) (PureAndPoll x y) = PureAndPoll x (alt b y)
+  --
+  alt (PureAndEvent a b) (OnlyPure x) = PureAndEvent (a <> x) b
+  alt (PureAndEvent a b) (OnlyEvent y) = PureAndEvent a (alt b y)
+  alt (PureAndEvent a b) (OnlyPoll y) = PureAndPoll a (alt (Poll.sham b) y)
+  alt (PureAndEvent a b) (PureAndEvent x y) = PureAndEvent (a <> x) (alt b y)
+  alt (PureAndEvent a b) (PureAndPoll x y) = PureAndPoll (a <> x) (alt (Poll.sham b) y)
+  --
   alt (PureAndPoll a b) (OnlyPure x) = PureAndPoll (a <> x) b
   alt (PureAndPoll a b) (OnlyEvent y) = PureAndPoll a (alt b $ Poll.sham y)
   alt (PureAndPoll a b) (OnlyPoll y) = PureAndPoll a (alt b y)
+  alt (PureAndPoll a b) (PureAndEvent x y) = PureAndPoll (a <> x) (alt b $ Poll.sham y)
   alt (PureAndPoll a b) (PureAndPoll x y) = PureAndPoll (a <> x) (alt b y)
 
 instance Plus Poll where
@@ -182,9 +198,10 @@ merge a = case foldr go { l: [], m: [], r: [] } a of
   { l, m, r } -> PureAndPoll l (Poll.sham (Event.merge m) <|> Poll.merge r)
   where
 
-  go (OnlyPure q) { l, m, r } = { l:  q <> l, m, r }
+  go (OnlyPure q) { l, m, r } = { l: q <> l, m, r }
   go (OnlyEvent q) { l, m, r } = { l, m: [ q ] <> m, r }
-  go (OnlyPoll q) { l, m, r } = { l, m, r:  [ q ] <> r }
+  go (PureAndEvent x y) { l, m, r } = { l: x <> l, m: [ y ] <> m, r }
+  go (OnlyPoll q) { l, m, r } = { l, m, r: [ q ] <> r }
   go (PureAndPoll x y) { l, m, r } = { l: x <> l, m, r: [ y ] <> r }
 
 mergeMap :: forall a b. (a -> Poll b) -> Array a → Poll b
@@ -401,6 +418,7 @@ filterMap
   -> Poll a
   -> Poll b
 filterMap f (PureAndPoll x y) = PureAndPoll (Filterable.filterMap f x) (Filterable.filterMap f y)
+filterMap f (PureAndEvent x y) = PureAndEvent (Filterable.filterMap f x) (Filterable.filterMap f y)
 filterMap f (OnlyPure x) = OnlyPure (Filterable.filterMap f x)
 filterMap f (OnlyEvent x) = OnlyEvent (Filterable.filterMap f x)
 filterMap f (OnlyPoll y) = OnlyPoll (Filterable.filterMap f y)
@@ -434,11 +452,19 @@ sampleOnLeft :: forall a b. Poll a -> Poll (a -> b) -> Poll b
 sampleOnLeft (OnlyEvent a) (OnlyEvent b) = OnlyEvent (a `EClass.sampleOnLeft` b)
 sampleOnLeft a b = pollFromPoll (toPoll a `EClass.sampleOnLeft` toPoll b)
 
+eventOrBust :: Poll ~> Event
+eventOrBust (OnlyEvent a) = a
+eventOrBust _ = empty
+
 fix
   :: forall a
    . (Poll a -> Poll a)
   -> Poll a
-fix f = pollFromPoll $ EClass.fix (dimap pollFromPoll toPoll f)
+fix f = do
+  let o = f empty
+  case o of
+    OnlyEvent _ -> pollFromEvent $ EClass.fix (dimap pollFromEvent eventOrBust f)
+    _ -> pollFromPoll $ EClass.fix (dimap pollFromPoll toPoll f)
 
 once :: Poll ~> Poll
 once i = pollFromPoll $ EClass.once (toPoll i)
@@ -463,11 +489,13 @@ create = do
 
 createTagged
   :: forall a
-   . String -> ST Global (PollIO a)
+   . String
+  -> ST Global (PollIO a)
 createTagged tag = do
   { event, push } <- Event.createTagged tag
   { poll: p } <- rant (sham event)
   pure { poll: p, push }
+
 createPure
   :: forall a
    . ST Global (PurePollIO a)
@@ -488,9 +516,8 @@ rant
   :: forall a
    . Poll a
   -> ST Global { poll :: Poll a, unsubscribe :: ST Global Unit }
-rant (PureAndPoll _ i) = do
-  { poll: p, unsubscribe } <- Poll.rant i
-  pure $ { poll: OnlyPoll p, unsubscribe }
+rant (PureAndPoll _ i) = rant (OnlyPoll i)
+rant (PureAndEvent _ i) = rant (OnlyEvent i)
 -- todo: we should add or remove effect from some of these types
 rant (OnlyEvent i) =
   ( unsafeCoerce
@@ -515,6 +542,7 @@ deflect
    . Poll a
   -> ST Global (Poll a)
 deflect (PureAndPoll a b) = PureAndPoll a <$> Poll.deflect b
+deflect (PureAndEvent a _) = pure (OnlyPure a)
 deflect (OnlyPoll b) = OnlyPoll <$> Poll.deflect b
 deflect (OnlyEvent _) = pure $ OnlyPure []
 deflect (OnlyPure a) = pure (OnlyPure a)
@@ -531,6 +559,10 @@ keepLatest' e = makeEvent \s -> do
       c <- s (Poll.sample p ep.event) justOne
       ep.push identity
       void $ liftST $ STRef.write c cancelInner
+    onEvent ev =
+      justNone do
+        c <- s ev justOne
+        void $ liftST $ STRef.write c cancelInner
   cancelOuter <-
     s e \i -> do
       justNone do
@@ -538,12 +570,14 @@ keepLatest' e = makeEvent \s -> do
         ci
       case i of
         OnlyPure p -> onPure p
-        OnlyEvent ev ->
-          justNone do
-            c <- s ev justOne
-            void $ liftST $ STRef.write c cancelInner
+        OnlyEvent ev -> onEvent ev
         OnlyPoll p -> onPoll p
-        PureAndPoll p q -> onPure p *> onPoll q
+        PureAndEvent p q -> do
+          onPure p
+          onEvent q
+        PureAndPoll p q -> do
+          onPure p
+          onPoll q
   pure do
     ci <- STRef.read cancelInner
     ci
@@ -556,6 +590,15 @@ keepLatest
 keepLatest (OnlyPure p) = fromMaybe empty (Array.last p)
 keepLatest (OnlyEvent e) = OnlyEvent $ keepLatest' e
 keepLatest (OnlyPoll p) = OnlyPoll $ Poll.poll \e -> map (uncurry ($)) $ keepLatest' $ Poll.sampleBy (\pl ff -> Tuple ff <$> pl) p e
+keepLatest (PureAndEvent l r) = 
+  -- todo: verify this is right
+  case Array.last l of
+    Nothing -> pollFromEvent $ keepLatest' r
+    Just (OnlyPure a) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
+    Just (OnlyEvent e) -> OnlyEvent (keepLatest' r)
+    Just (OnlyPoll p) -> OnlyEvent (keepLatest' r)
+    Just (PureAndEvent a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
+    Just (PureAndPoll a p) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
 keepLatest (PureAndPoll l r) = keepLatest (OnlyPoll (maybe empty pure (Array.last l) <|> r))
 
 class Pollable pollable where
@@ -564,6 +607,9 @@ class Pollable pollable where
 
 instance Pollable Event where
   sample (PureAndPoll x y) ab = e <|> Poll.sample y ab
+    where
+    e = makeEvent \s -> s ab \f -> justMany (map f x)
+  sample (PureAndEvent x y) ab = e <|> y `EClass.sampleOnLeft` ab
     where
     e = makeEvent \s -> s ab \f -> justMany (map f x)
   sample (OnlyEvent y) ab = y `EClass.sampleOnLeft` ab
