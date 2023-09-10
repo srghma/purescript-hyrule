@@ -598,7 +598,7 @@ keepLatest (PureAndEvent l r) =
     Just (OnlyEvent _) -> OnlyEvent (keepLatest' r)
     Just (OnlyPoll _) -> OnlyEvent (keepLatest' r)
     Just (PureAndEvent a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
-    Just (PureAndPoll a p) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
+    Just (PureAndPoll a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
 keepLatest (PureAndPoll l r) = keepLatest (OnlyPoll (maybe empty pure (Array.last l) <|> r))
 
 class Pollable pollable where
