@@ -595,8 +595,8 @@ keepLatest (PureAndEvent l r) =
   case Array.last l of
     Nothing -> pollFromEvent $ keepLatest' r
     Just (OnlyPure a) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
-    Just (OnlyEvent e) -> OnlyEvent (keepLatest' r)
-    Just (OnlyPoll p) -> OnlyEvent (keepLatest' r)
+    Just (OnlyEvent _) -> OnlyEvent (keepLatest' r)
+    Just (OnlyPoll _) -> OnlyEvent (keepLatest' r)
     Just (PureAndEvent a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
     Just (PureAndPoll a p) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
 keepLatest (PureAndPoll l r) = keepLatest (OnlyPoll (maybe empty pure (Array.last l) <|> r))
