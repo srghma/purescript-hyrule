@@ -3,6 +3,7 @@
   [ "aff"
   , "arrays"
   , "avar"
+  , "contravariant"
   , "control"
   , "datetime"
   , "debug"

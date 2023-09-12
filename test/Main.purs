@@ -15,6 +15,8 @@ import Data.Foldable (oneOf, oneOfMap, sequence_)
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.JSDate (getTime, now)
+import Data.Newtype (over, under)
+import Data.Op (Op(..))
 import Data.Profunctor (lcmap)
 import Data.Traversable (foldr, for_, sequence)
 import Data.Tuple (Tuple(..))
@@ -958,14 +960,14 @@ main = do
             rf <- liftEffect $ Ref.new []
             unsub <- liftEffect $ Event.subscribe (debounce (Milliseconds 1000.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
-              withTime push 1
-              withTime push 2
-              withTime push 3
-              withTime push 4
+              under Op withTime push 1
+              under Op withTime push 2
+              under Op withTime push 3
+              under Op withTime push 4
             delay (Milliseconds 1500.0)
             liftEffect do
-              withTime push 5
-              withTime push 6
+              under Op withTime push 5
+              under Op withTime push 6
               o <- Ref.read rf
               map _.value o `shouldEqual` [ 5, 1 ]
               unsub
@@ -975,14 +977,14 @@ main = do
                 { event, push } <- liftST $ Event.create
                 rf <- liftEffect $ Ref.new []
                 unsub <- liftEffect $ Event.subscribe (debounce (Milliseconds 500.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
-                liftEffect $ withTime push unit
+                liftEffect $ under Op withTime push unit
                 when emitSecond do
-                  liftEffect $ withTime push unit
+                  liftEffect $ under Op withTime push unit
                 delay $ Milliseconds 250.0
-                liftEffect $ withTime push unit
+                liftEffect $ under Op withTime push unit
                 delay $ Milliseconds 300.0
-                liftEffect $ withTime push unit
-                liftEffect $ withTime push unit
+                liftEffect $ under Op withTime push unit
+                liftEffect $ under Op withTime push unit
                 o <- liftEffect $ Ref.read rf
                 length o `shouldEqual` 2
                 liftEffect $ unsub
