@@ -10,6 +10,7 @@
   , "effect"
   , "either"
   , "filterable"
+  , "random"
   , "foldable-traversable"
   , "free"
   , "functors"
