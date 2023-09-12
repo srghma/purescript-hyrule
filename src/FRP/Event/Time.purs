@@ -1,8 +1,8 @@
 module FRP.Event.Time
   ( withTime
+  , withDelay
   , debounce
   , interval
-  , delay
   ) where
 
 import Prelude
@@ -52,8 +52,8 @@ interval
        }
 interval = interval' pure
 
-delay :: forall a. Int -> (Either TimeoutId (Tuple TimeoutId a) -> Effect Unit) -> a -> Effect Unit
-delay n f value = launchAff_ do
+withDelay :: forall a. Int -> (Either TimeoutId (Tuple TimeoutId a) -> Effect Unit) -> a -> Effect Unit
+withDelay n f value = launchAff_ do
   tid <- Avar.empty
   o <- liftEffect $ setTimeout n $ launchAff_ do
     t <- Avar.read tid
