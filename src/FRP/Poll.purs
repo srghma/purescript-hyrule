@@ -52,14 +52,14 @@ import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as STRef
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
-import Data.Either (Either, either)
+import Data.Either (Either(..), either)
 import Data.Filterable (eitherBool, maybeBool)
 import Data.Filterable as Filterable
 import Data.Foldable (foldr, oneOfMap)
 import Data.Function (applyFlipped)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..))
 import Data.Profunctor (dimap)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect (Effect)
@@ -68,6 +68,7 @@ import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class as EClass
 import FRP.Poll.Unoptimized as Poll
+import Partial.Unsafe (unsafePartial)
 import Unsafe.Coerce (unsafeCoerce)
 
 -- | `Poll` is an optimized version of poll fine-tuned for `Event`.
@@ -563,43 +564,63 @@ keepLatest' e = makeEvent \s -> do
       justNone do
         c <- s ev justOne
         void $ liftST $ STRef.write c cancelInner
+  let
+    treatMe i = case i of
+      OnlyPure p -> onPure p
+      OnlyEvent ev -> onEvent ev
+      OnlyPoll p -> onPoll p
+      PureAndEvent p q -> do
+        onPure p
+        onEvent q
+      PureAndPoll p q -> do
+        onPure p
+        onPoll q
   cancelOuter <-
     s e \i -> do
       justNone do
         ci <- STRef.read cancelInner
         ci
-      case i of
-        OnlyPure p -> onPure p
-        OnlyEvent ev -> onEvent ev
-        OnlyPoll p -> onPoll p
-        PureAndEvent p q -> do
-          onPure p
-          onEvent q
-        PureAndPoll p q -> do
-          onPure p
-          onPoll q
+      treatMe i
   pure do
     ci <- STRef.read cancelInner
     ci
     cancelOuter
 
+foldlArr :: forall a b c. (b -> c) -> (b -> a -> Boolean -> (Unit -> Array a) -> Either b c) -> b -> Array a -> c
+foldlArr bc arf bb arr = go 0 bb
+  where
+  go i b
+    | i == Array.length arr = bc b
+    | otherwise = case arf b (unsafePartial (Array.unsafeIndex arr i)) (i + 1 == Array.length arr) (\_ -> Array.drop (i + 1) arr) of
+        Left b' -> go (i + 1) b'
+        Right c -> c
+
+replayPollsForKeepLatest :: forall a. Array (Poll a) -> Poll a
+replayPollsForKeepLatest = foldlArr OnlyPure
+  ( \b a isLast x -> case a of
+      -- elide them
+      OnlyPure pp -> Left (b <> pp)
+      -- this event would have never emitted because we would have canceled it before it ever started
+      OnlyEvent _ -> Left b
+      PureAndEvent pp _ -> Left (b <> pp)
+      OnlyPoll pl -> Right $ PureAndPoll b (cnt isLast pl x)
+      PureAndPoll pp pl -> Right $ PureAndPoll (b <> pp) (cnt isLast pl x)
+  )
+  []
+  where
+  cnt isLast pl x = Poll.poll \e -> makeEvent \sub -> do
+    dfl <- (if isLast then pure else Poll.deflect) pl
+    sub ((Poll.sample dfl e) <|> sample (replayPollsForKeepLatest (x unit)) e) justOne
+
 keepLatest
   :: forall a
    . Poll (Poll a)
   -> Poll a
-keepLatest (OnlyPure p) = fromMaybe empty (Array.last p)
+keepLatest (OnlyPure p) = replayPollsForKeepLatest p
 keepLatest (OnlyEvent e) = OnlyEvent $ keepLatest' e
 keepLatest (OnlyPoll p) = OnlyPoll $ Poll.poll \e -> map (uncurry ($)) $ keepLatest' $ Poll.sampleBy (\pl ff -> Tuple ff <$> pl) p e
-keepLatest (PureAndEvent l r) = 
-  -- todo: verify this is right
-  case Array.last l of
-    Nothing -> pollFromEvent $ keepLatest' r
-    Just (OnlyPure a) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
-    Just (OnlyEvent _) -> OnlyEvent (keepLatest' r)
-    Just (OnlyPoll _) -> OnlyEvent (keepLatest' r)
-    Just (PureAndEvent a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
-    Just (PureAndPoll a _) -> PureAndEvent (maybe [] pure (Array.last a)) (keepLatest' r)
-keepLatest (PureAndPoll l r) = keepLatest (OnlyPoll (maybe empty pure (Array.last l) <|> r))
+keepLatest (PureAndEvent l r) = replayPollsForKeepLatest (l <> [ OnlyEvent $ keepLatest' r ])
+keepLatest (PureAndPoll l r) = replayPollsForKeepLatest (l <> [ keepLatest (OnlyPoll r) ])
 
 class Pollable pollable where
   -- | Sample a `Poll` on some `Event`.
