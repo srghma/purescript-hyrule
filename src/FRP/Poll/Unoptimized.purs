@@ -15,6 +15,7 @@ module FRP.Poll.Unoptimized
   , integral
   , integral'
   , mailbox
+  , mailboxS
   , merge
   , mergeMap
   , poll
@@ -478,6 +479,12 @@ mailbox = do
   { push, event } <- Event.mailbox
   pure { poll: map sham event, push }
 
+mailboxS
+  :: forall b
+   . ST Global { push :: { address :: String, payload :: b } -> Effect Unit, poll :: String -> Poll b }
+mailboxS = do
+  { push, event } <- Event.mailboxS
+  pure { poll: map sham event, push }
 rant
   :: forall a
    . Poll a

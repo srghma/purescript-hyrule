@@ -24,6 +24,10 @@ module FRP.Event
   , mailbox'
   , mailboxPure
   , mailboxPure'
+  , mailboxS
+  , mailboxS'
+  , mailboxPureS
+  , mailboxPureS'
   , makeEvent
   , makeEventE
   , memoize
@@ -45,7 +49,6 @@ import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
 import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2, runSTFn3)
-import Data.Array (deleteBy)
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
@@ -56,11 +59,11 @@ import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Effect (Effect, foreachE)
+import Effect (Effect)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
+import Foreign.Object.ST as STObject
 import Unsafe.Coerce (unsafeCoerce)
-import Unsafe.Reference (unsafeRefEq)
 
 -- | An `Event` represents a collection of discrete occurrences with associated
 -- | times. Conceptually, an `Event` is a (possibly-infinite) list of values-and-times:
@@ -359,6 +362,7 @@ create = create_ ""
 
 createTagged :: forall a. String -> ST Global (EventIO a)
 createTagged = create_
+
 createPure :: forall a. ST Global (PureEventIO a)
 createPure = unsafeCoerce $ create_ ""
 
@@ -384,7 +388,8 @@ memoize e = do
 
 create_
   :: forall a
-   . String -> ST Global (EventIO a)
+   . String
+  -> ST Global (EventIO a)
 create_ tag = do
   subscribers <- objHack tag
   idx <- STRef.new 0
@@ -433,41 +438,92 @@ mailboxPure' = (unsafeCoerce :: (Ord a => ST Global { push :: EffectFn1 { addres
 mailbox' :: forall a b. Ord a => ST Global { push :: EffectFn1 { address :: a, payload :: b } Unit, event :: a -> Event b }
 mailbox' = do
   r <- STRef.new Map.empty
+  idx <- STRef.new 0
   pure
-    { event: \a -> Event $ mkSTFn2 \_ k2 -> do
-        void $ STRef.modify
-          ( Map.alter
-              ( case _ of
-                  Nothing -> Just [ k2 ]
-                  Just arr -> Just (arr <> [ k2 ])
-              )
-              a
-          )
-          r
-        pure $ void $ STRef.modify
-          ( Map.alter
-              ( case _ of
-                  Nothing -> Nothing
-                  Just arr -> Just (deleteBy unsafeRefEq k2 arr)
-              )
-              a
-          )
-          r
+    { event: \a ->
+        Event $ mkSTFn2 \_ k -> do
+          o <- liftST $ STRef.read r
+          subscribers <- case Map.lookup a o of
+            Nothing -> do
+              oh <- objHack ""
+              void $ STRef.modify (Map.insert a oh) r
+              pure oh
+            Just s -> pure s
+          rk <- STRef.new k
+          ix <- STRef.read idx
+          runSTFn3 insertObjHack ix rk subscribers
+          void $ STRef.modify (_ + 1) idx
+          pure do
+            void $ STRef.write mempty rk
+            runSTFn2 deleteObjHack ix subscribers
+            pure unit
     , push: mkEffectFn1 \{ address, payload } -> do
         o <- liftST $ STRef.read r
         case Map.lookup address o of
           Nothing -> pure unit
-          Just arr -> foreachE arr \i -> runEffectFn1 i payload
+          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
+            k <- liftST $ STRef.read rk
+            runEffectFn1 k payload
+        pure unit
+    }
+
+mailboxS :: forall b. ST Global { push :: { address :: String, payload :: b } -> Effect Unit, event :: String -> Event b }
+mailboxS = do
+  { push, event } <- mailboxS'
+  pure
+    { push: \ap -> runEffectFn1 push ap
+    , event
+    }
+
+mailboxPureS :: forall b. ST Global { push :: { address :: String, payload :: b } -> ST Global Unit, event :: String -> Event b }
+mailboxPureS = (unsafeCoerce :: (forall b. ST Global { push :: { address :: String, payload :: b } -> Effect Unit, event :: String -> Event b }) -> (ST Global { push :: { address :: String, payload :: b } -> ST Global Unit, event :: String -> Event b })) mailbox
+
+mailboxPureS' :: forall b. ST Global { push :: STFn1 { address :: String, payload :: b } Global Unit, event :: String -> Event b }
+mailboxPureS' = (unsafeCoerce :: (ST Global { push :: EffectFn1 { address :: String, payload :: b } Unit, event :: String -> Event b }) -> (ST Global { push :: STFn1 { address :: String, payload :: b } Global Unit, event :: String -> Event b })) mailbox'
+
+mailboxS' :: forall b. ST Global { push :: EffectFn1 { address :: String, payload :: b } Unit, event :: String -> Event b }
+mailboxS' = do
+  r <- STObject.new
+  idx <- STRef.new 0
+  pure
+    { event: \a ->
+        Event $ mkSTFn2 \_ k -> do
+          o <- liftST $ STObject.peek a r
+          subscribers <- case o of
+            Nothing -> do
+              oh <- objHack ""
+              void $ STObject.poke a oh r
+              pure oh
+            Just s -> pure s
+          rk <- STRef.new k
+          ix <- STRef.read idx
+          runSTFn3 insertObjHack ix rk subscribers
+          void $ STRef.modify (_ + 1) idx
+          pure do
+            void $ STRef.write mempty rk
+            runSTFn2 deleteObjHack ix subscribers
+            pure unit
+    , push: mkEffectFn1 \{ address, payload } -> do
+        o <- liftST $ STObject.peek address r
+        case o of
+          Nothing -> pure unit
+          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
+            k <- liftST $ STRef.read rk
+            runEffectFn1 k payload
         pure unit
     }
 
 --
 foreign import fastForeachThunkST :: STFn1 (Array (ST Global Unit)) Global Unit
+
 fastForeachThunkE :: EffectFn1 (Array (Effect Unit)) Unit
 fastForeachThunkE = unsafeCoerce fastForeachThunkST
+
 foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+
 fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
 fastForeachST = unsafeCoerce fastForeachE
+
 foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
 
 makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }

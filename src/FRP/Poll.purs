@@ -17,6 +17,7 @@ module FRP.Poll
   , integral
   , integral'
   , mailbox
+  , mailboxS
   , merge
   , mergeMap
   , mergeMapPure
@@ -510,6 +511,13 @@ mailbox
   => ST Global { push :: { address :: a, payload :: b } -> Effect Unit, poll :: a -> Poll b }
 mailbox = do
   { push, event } <- Event.mailbox
+  pure { poll: map sham event, push }
+
+mailboxS
+  :: forall b
+   . ST Global { push :: { address :: String, payload :: b } -> Effect Unit, poll :: String -> Poll b }
+mailboxS = do
+  { push, event } <- Event.mailboxS
   pure { poll: map sham event, push }
 
 -- Rant never emits the head, so we can just ignore it

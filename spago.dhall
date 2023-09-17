@@ -11,6 +11,7 @@
   , "either"
   , "filterable"
   , "foldable-traversable"
+  , "foreign-object"
   , "free"
   , "functors"
   , "js-timers"
