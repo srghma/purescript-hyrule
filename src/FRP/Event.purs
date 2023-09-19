@@ -36,6 +36,8 @@ module FRP.Event
   , module Class
   , subscribe
   , subscribeO
+  , foldObj
+  , foldArr
   ) where
 
 import Prelude
@@ -49,6 +51,7 @@ import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
 import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2, runSTFn3)
+import Data.Array.ST (STArray)
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
 import Data.Either (Either(..), either, hush)
@@ -62,6 +65,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Uncurried (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1, runEffectFn2)
 import FRP.Event.Class (class Filterable, class IsEvent, count, filterMap, fix, fold, folded, gate, gateBy, keepLatest, mapAccum, sampleOnRight, sampleOnRight_, withLast) as Class
+import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STObject
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -531,3 +535,26 @@ makeEventE e = do
   { event, push } <- liftST create
   unsubscribe <- e push
   pure { event, unsubscribe }
+
+
+-- | A fast fold over an object
+foldObj :: forall a b c. (forall r. STObject r b -> a -> ST r c) -> Event a -> Event c
+foldObj f e = makeEvent \s -> do
+  o <- STObject.new
+  let
+    go :: a -> EventfulProgram c
+    go a = do
+      justOneM (f o a)
+  c <- s e go
+  pure c
+
+-- | A fast fold over an array
+foldArr :: forall a b c. (forall r. STArray r b -> a -> ST r c) -> Event a -> Event c
+foldArr f e = makeEvent \s -> do
+  o <- STArray.new
+  let
+    go ::  a -> EventfulProgram c
+    go a = do
+      justOneM (f o a)
+  c <- s e go
+  pure c

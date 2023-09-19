@@ -15,12 +15,14 @@ import Data.Foldable (oneOf, oneOfMap, sequence_)
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.JSDate (getTime, now)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (over, under)
 import Data.Op (Op(..))
 import Data.Profunctor (lcmap)
 import Data.Traversable (foldr, for_, sequence)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
+import Debug (spy)
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
@@ -28,10 +30,11 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
-import FRP.Event.Class (fold, once, keepLatest, sampleOnRight)
+import FRP.Event.Class (fold, keepLatest, once, sampleOnRight)
 import FRP.Event.Time (debounce, withTime)
 import FRP.Poll as OptimizedPoll
 import FRP.Poll.Unoptimized as UnoptimizedPoll
+import Foreign.Object.ST as STObject
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Console (write)
@@ -231,7 +234,7 @@ suite1 name { setup, prime, create, toEvent, underTest } = do
     o `shouldEqual` [ 6, 7, 8, 9, 10, 11, 12 ]
     u
 
-suite2 name { setup, prime, create, toEvent, underTest } = do
+suite2 name { setup, prime, create, toEvent, underTest, muxEvent } = do
   describe name do
     it "should handle fold 1" $ liftEffect do
       r <- liftST $ STRef.new []
@@ -240,6 +243,43 @@ suite2 name { setup, prime, create, toEvent, underTest } = do
       let
         event' = do
           let foldy = (fold (\b _ -> b + 1) 0 (underTest testing))
+          let add2 = map (add 2) foldy
+          let add3 = map (add 3) add2
+          let add4 = map (add 4) add3
+          let altr = foldy <|> add2 <|> empty <|> add4 <|> empty
+          let fm = (filter (_ > 5) altr)
+          foldy <|> fm
+      u <- subscribe (toEvent event' ep) \i ->
+        liftST $ void $ STRef.modify (Array.cons i) r
+      prime ep
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 10, 1 ]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 11, 2 ]
+      liftST $ void $ STRef.write [] r
+      testing.push unit
+      liftST (STRef.read r) >>= shouldEqual [ 12, 3 ]
+      u
+    it "should handle foldObj" $ liftEffect do
+      r <- liftST $ STRef.new []
+      ep <- liftST setup
+      testing <- liftST create
+      let
+        event' = do
+          let
+            go :: forall r. STObject.STObject r Int -> Unit -> ST r Int
+            go obj _ = do
+              x <- STObject.peek "foo" obj
+              case x of
+                Nothing -> do
+                  void $ STObject.poke "foo" 1 obj
+                  pure 1
+                Just x -> do
+                  let _ = spy "OHHI" x
+                  void $ STObject.poke "foo" (x + 1) obj
+                  pure (x + 1)
+          let foldy = (muxEvent (Event.foldObj go) (underTest testing))
           let add2 = map (add 2) foldy
           let add3 = map (add 3) add2
           let add4 = map (add 4) add3
@@ -485,6 +525,7 @@ suite10 name { setup, prime, create, toEvent, underTest } = do
       v <- liftST $ STRef.read r
       v `shouldEqual` (Array.reverse [ Tuple 0 42, Tuple 1 8, Tuple 2 15 ])
       u
+
 main :: Effect Unit
 main = do
   launchAff_
@@ -516,6 +557,7 @@ main = do
           , create: UnoptimizedPoll.create
           , toEvent: \b ep -> UnoptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
+          , muxEvent: UnoptimizedPoll.dredge
           }
         suite2 "OptimizedPoll"
           { setup: Event.create
@@ -523,6 +565,7 @@ main = do
           , create: OptimizedPoll.create
           , toEvent: \b ep -> OptimizedPoll.sample_ b ep.event
           , underTest: \testing -> testing.poll
+          , muxEvent: OptimizedPoll.dredge
           }
         suite2 "Event"
           { setup: pure unit
@@ -530,6 +573,7 @@ main = do
           , create: Event.create
           , toEvent: \e _ -> e
           , underTest: \testing -> testing.event
+          , muxEvent: identity
           }
         suite3 "UnoptimizedPoll"
           { setup: Event.create
