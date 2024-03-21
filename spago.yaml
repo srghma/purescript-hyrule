@@ -31,6 +31,8 @@ package:
     - foreign-object
     - debug
     - random
+    - avar
+    - free
   test:
     main: Test.Main
     dependencies:

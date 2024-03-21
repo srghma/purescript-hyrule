@@ -28,7 +28,7 @@ import Safe.Coerce (coerce)
 -- | Create an event which reports the current time in milliseconds since the epoch.
 -- withTime :: forall a. Op (Effect Unit) { value :: a, time :: Instant } -> Op (Effect Unit) a
 
-withTimeX value = withTime (\publishTimeValue -> ?a) value
+-- withTimeX value = withTime (\publishTimeValue -> ?a) value
 
 withTime :: forall a. ( { time :: Instant
       , value :: a

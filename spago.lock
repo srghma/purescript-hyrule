@@ -4,6 +4,7 @@ workspace:
       path: ./
       dependencies:
         - arrays
+        - avar
         - control
         - datetime
         - debug
