@@ -27,6 +27,7 @@ export const objHack = () => {
   return { r: false, q: [], m: [{}] };
 };
 
+// int, value, objHack
 export const insertObjHack = (k, v, o) => {
   o.m[o.m.length - 1][k] = v;
 };
@@ -43,6 +44,7 @@ export const deleteObjHack = (k, o) => {
 export const fastForeachOhE = (o, ff) => {
   let f = ff;
   while (true) {
+    // if return then
     if (o.r) {
       o.q.push(f) ;
       return;

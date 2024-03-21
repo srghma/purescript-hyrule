@@ -43,7 +43,7 @@ import Prelude
 import Control.Alt ((<|>))
 import Control.Alternative (class Alt, class Plus)
 import Control.Apply (lift2)
-import Control.Monad.ST (ST)
+import Control.Monad.ST (ST, foreach)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
@@ -77,12 +77,23 @@ import Unsafe.Reference (unsafeRefEq)
 -- | combined using the various functions and instances provided in this module.
 -- |
 -- | Events are consumed by providing a callback using the `subscribe` function.
-newtype Event a = Event (STFn2 Boolean (EffectFn1 a Unit) Global (ST Global Unit))
+newtype Event a = Event
+  (STFn2 Boolean (EffectFn1 a Unit) Global (ST Global Unit))
 
+-- Boolean -> (a -> Effect Unit) -> Effect (Effect Unit)
 -- boolean :: t = pure,false = impure
+-- callback
+-- create event and return unsubscribe
 
 instance functorEvent :: Functor Event where
-  map f (Event e) = Event (mkSTFn2 (\b k -> runSTFn2 e b (mkEffectFn1 (\a -> runEffectFn1 k (f a)))))
+  map :: forall a b. (a -> b) -> Event a -> Event b
+  map f (Event e) = Event
+    ( let
+        fn :: Boolean -> EffectFn1 b Unit -> ST Global (ST Global Unit)
+        fn b k = runSTFn2 e b (mkEffectFn1 (\a -> runEffectFn1 k (f a)))
+      in
+        mkSTFn2 fn
+    )
 
 instance functorWithIndexEvent :: FunctorWithIndex Int Event where
   mapWithIndex f e = Class.mapAccum (\a b -> Tuple (a + 1) (f a b)) 0 e
@@ -138,7 +149,9 @@ instance altEvent :: Alt Event where
 merge :: forall a. Array (Event a) → Event a
 merge f = Event $ mkSTFn2 \tf k -> do
   a <- STArray.new
-  ((unsafeCoerce :: (Array (Event a) -> ((Event a) -> Effect Unit) -> Effect Unit) -> Array (Event a) -> ((Event a) -> ST Global Unit) -> ST Global Unit) foreachE) f \(Event i) -> do
+  ( foreach
+  --  https://pursuit.purescript.org/packages/purescript-st/6.2.0/docs/Control.Monad.ST.Internal#v:foreach
+  ) f \(Event i) -> do
     u <- runSTFn2 i tf k
     void $ liftST $ STArray.push u a
   pure do
@@ -150,7 +163,13 @@ merge f = Event $ mkSTFn2 \tf k -> do
 mergeMap :: forall a b. (a -> Event b) -> Array a → Event b
 mergeMap f0 f = Event $ mkSTFn2 \tf k -> do
   a <- STArray.new
-  ((unsafeCoerce :: (Array a -> (a -> Effect Unit) -> Effect Unit) -> Array a -> (a -> ST Global Unit) -> ST Global Unit) foreachE) f \x -> do
+  ( ( unsafeCoerce
+        :: (Array a -> (a -> Effect Unit) -> Effect Unit)
+        -> Array a
+        -> (a -> ST Global Unit)
+        -> ST Global Unit
+    ) foreachE
+  ) f \x -> do
     let (Event i) = f0 x
     u <- runSTFn2 i tf k
     void $ liftST $ STArray.push u a
@@ -179,7 +198,7 @@ once (Event e) =
   Event $ mkSTFn2 \b k -> do
     latest <- STRef.new Nothing
     u <- STRef.new $ pure unit
-    c <-
+    (unsubscribe :: ST Global Unit) <-
       runSTFn2 e b $ mkEffectFn1 \a -> do
         o <- liftST $ STRef.read latest
         case o of
@@ -189,13 +208,13 @@ once (Event e) =
             liftST $ join (STRef.read u)
           -- should not hit here
           Just _ -> pure unit
-    void $ STRef.write c u
+    void $ STRef.write unsubscribe u
     o <- liftST $ STRef.read latest
     case o of
-      Just _ -> c
+      Just _ -> unsubscribe
       _ -> pure unit
     pure do
-      c
+      unsubscribe
 
 -- | Create an `Event` which only fires when a predicate holds.
 filter :: forall a b. (a -> Maybe b) -> Event a -> Event b
@@ -269,7 +288,7 @@ keepLatest (Event e) =
     cancelOuter <-
       runSTFn2 e tf $ mkEffectFn1 \(Event inner) -> liftST do
         ci <- STRef.read cancelInner
-        ci
+        ci -- cancel old inner
         c <- runSTFn2 inner tf k
         void $ liftST $ STRef.write c cancelInner
     pure do
@@ -303,17 +322,19 @@ subscribe (Event e) k = runSTFn2 e false (mkEffectFn1 k)
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
-subscribeO
+subscribeO -- O is original?
   :: forall a
    . STFn2 (Event a) (EffectFn1 a Unit) Global (ST Global Unit)
-subscribeO = mkSTFn2 \(Event e) k -> runSTFn2 e false k
+subscribeO = mkSTFn2 \(Event e) k -> runSTFn2 e false k -- same as subscribe
 
 subscribePureO
   :: forall a
    . STFn2 (Event a) (STFn1 a Global Unit) Global (ST Global Unit)
-subscribePureO = mkSTFn2 \(Event e) k -> (runSTFn2 e true (stPusherToEffectPusher k))
+subscribePureO = mkSTFn2 \(Event e) k ->
+  (runSTFn2 e true (stPusherToEffectPusher k))
   where
-  stPusherToEffectPusher :: forall aa. (STFn1 a Global Unit) -> EffectFn1 aa Unit
+  stPusherToEffectPusher
+    :: forall aa. (STFn1 a Global Unit) -> EffectFn1 aa Unit
   stPusherToEffectPusher = unsafeCoerce
 
 subscribePure
@@ -321,10 +342,12 @@ subscribePure
    . Event a
   -> (a -> ST Global Unit)
   -> ST Global (ST Global Unit)
-subscribePure (Event e) k = runSTFn2 e true (mkEffectFn1 (stPusherToEffectPusher k))
+subscribePure (Event e) k = runSTFn2 e true
+  (mkEffectFn1 (stPusherToEffectPusher k))
   where
 
-  stPusherToEffectPusher :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
+  stPusherToEffectPusher
+    :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
   stPusherToEffectPusher = unsafeCoerce
 
 -- | Make an `Event` from a function which accepts a callback and returns an
@@ -350,11 +373,18 @@ makePureEvent
   -> Event a
 makePureEvent e = Event $ mkSTFn2 \_ k -> do
   let
-    stEventToEvent :: forall aa. ((aa -> ST Global Unit) -> ST Global (ST Global Unit)) -> (aa -> Effect Unit) -> ST Global (ST Global Unit)
+    stEventToEvent
+      :: forall aa
+       . ((aa -> ST Global Unit) -> ST Global (ST Global Unit))
+      -> (aa -> Effect Unit)
+      -> ST Global (ST Global Unit)
     stEventToEvent = unsafeCoerce
   stEventToEvent e (\a -> runEffectFn1 k a)
 
-makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+makeEventE
+  :: forall a
+   . ((a -> Effect Unit) -> Effect (Effect Unit))
+  -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 makeEventE e = do
   { event, push } <- liftST create
   unsubscribe <- e push
@@ -369,23 +399,40 @@ makeEventO e = Event $ mkSTFn2 \tf k ->
 
 makeLemmingEvent
   :: forall a
-   . ((forall b. Event b -> (b -> ST Global Unit) -> ST Global (ST Global Unit)) -> (a -> ST Global Unit) -> ST Global (ST Global Unit))
+   . ( ( forall b
+          . Event b
+         -> (b -> ST Global Unit)
+         -> ST Global (ST Global Unit)
+       )
+       -> (a -> ST Global Unit)
+       -> ST Global (ST Global Unit)
+     )
   -> Event a
 makeLemmingEvent e = Event $ mkSTFn2 \tf k -> do
   let
 
-    stPusherToEffectPusher :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
+    stPusherToEffectPusher
+      :: forall aa. (aa -> ST Global Unit) -> aa -> Effect Unit
     stPusherToEffectPusher = unsafeCoerce
 
-    stEventToEvent :: forall aa. ((aa -> ST Global Unit) -> ST Global (ST Global Unit)) -> (aa -> Effect Unit) -> ST Global (ST Global Unit)
+    stEventToEvent
+      :: forall aa
+       . ((aa -> ST Global Unit) -> ST Global (ST Global Unit))
+      -> (aa -> Effect Unit)
+      -> ST Global (ST Global Unit)
     stEventToEvent = unsafeCoerce
 
-    o :: forall aa. Event aa -> (aa -> ST Global Unit) -> ST Global (ST Global Unit)
+    o
+      :: forall aa
+       . Event aa
+      -> (aa -> ST Global Unit)
+      -> ST Global (ST Global Unit)
     o (Event ev) kx = runSTFn2 ev tf (mkEffectFn1 (stPusherToEffectPusher kx))
 
   stEventToEvent (e o) (\a -> runEffectFn1 k a)
 
-newtype Subscriber = Subscriber (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
+newtype Subscriber = Subscriber
+  (forall b. STFn2 (Event b) (STFn1 b Global Unit) Global (ST Global Unit))
 
 makeLemmingEventO
   :: forall a
@@ -394,13 +441,19 @@ makeLemmingEventO
 makeLemmingEventO e = Event $ mkSTFn2 \tf k -> do
   let
 
-    stPusherToEffectPusher :: forall aa. STFn1 aa Global Unit -> EffectFn1 aa Unit
+    stPusherToEffectPusher
+      :: forall aa. STFn1 aa Global Unit -> EffectFn1 aa Unit
     stPusherToEffectPusher = unsafeCoerce
 
-    stEventToEvent :: forall aa. (STFn2 Subscriber (STFn1 aa Global Unit) Global (ST Global Unit)) -> STFn2 Subscriber (EffectFn1 aa Unit) Global (ST Global Unit)
+    stEventToEvent
+      :: forall aa
+       . (STFn2 Subscriber (STFn1 aa Global Unit) Global (ST Global Unit))
+      -> STFn2 Subscriber (EffectFn1 aa Unit) Global (ST Global Unit)
     stEventToEvent = unsafeCoerce
 
-    o :: forall aa. STFn2 (Event aa) (STFn1 aa Global Unit) Global (ST Global Unit)
+    o
+      :: forall aa
+       . STFn2 (Event aa) (STFn1 aa Global Unit) Global (ST Global Unit)
     o = mkSTFn2 \(Event ev) kx -> runSTFn2 ev tf (stPusherToEffectPusher kx)
 
   runSTFn2 (stEventToEvent e) (Subscriber o) k
@@ -435,13 +488,21 @@ memoized e f = makeLemmingEvent \s k -> do
     void $ STRef.write true done
     push a
 
-memoize :: forall a. Event a -> ST Global { event :: Event a, unsubscribe :: ST Global Unit }
+memoize
+  :: forall a
+   . Event a
+  -> ST Global { event :: Event a, unsubscribe :: ST Global Unit }
 memoize e = do
   { event, push } <- createPure
   unsubscribe <- subscribePure e push
   pure { event, unsubscribe }
 
-mailboxed :: forall r a b. Ord a => Event { address :: a, payload :: b } -> ((a -> Event b) -> r) -> Event r
+mailboxed
+  :: forall r a b
+   . Ord a
+  => Event { address :: a, payload :: b }
+  -> ((a -> Event b) -> r)
+  -> Event r
 mailboxed e f = makeLemmingEvent \s k -> do
   { event, push } <- mailboxPure
   done <- STRef.new false
@@ -501,7 +562,8 @@ create_ = do
 createPure
   :: forall a r
    . ST r (PureEventIO r a)
-createPure = (unsafeCoerce :: ST Global (EventIO a) -> ST r (PureEventIO r a)) create_
+createPure = (unsafeCoerce :: ST Global (EventIO a) -> ST r (PureEventIO r a))
+  create_
 
 type PureEventIO r a =
   { event :: Event a
@@ -516,14 +578,22 @@ type PureEventIO' r a =
 createPureO
   :: forall a
    . ST Global (PureEventIO' Global a)
-createPureO = (unsafeCoerce :: ST Global (EventIO' a) -> ST Global (PureEventIO' Global a)) create'
+createPureO =
+  (unsafeCoerce :: ST Global (EventIO' a) -> ST Global (PureEventIO' Global a))
+    create'
 
 createO
   :: forall a
    . ST Global (EventIO' a)
 createO = create'
 
-mailbox :: forall a b. Ord a => ST Global { push :: { address :: a, payload :: b } -> Effect Unit, event :: a -> Event b }
+mailbox
+  :: forall a b
+   . Ord a
+  => ST Global
+       { push :: { address :: a, payload :: b } -> Effect Unit
+       , event :: a -> Event b
+       }
 mailbox = do
   { push, event } <- mailbox'
   pure
@@ -531,13 +601,60 @@ mailbox = do
     , event
     }
 
-mailboxPure :: forall a b. Ord a => ST Global { push :: { address :: a, payload :: b } -> ST Global Unit, event :: a -> Event b }
-mailboxPure = (unsafeCoerce :: (forall a b. Ord a => ST Global { push :: { address :: a, payload :: b } -> Effect Unit, event :: a -> Event b }) -> (Ord a => ST Global { push :: { address :: a, payload :: b } -> ST Global Unit, event :: a -> Event b })) mailbox
+mailboxPure
+  :: forall a b
+   . Ord a
+  => ST Global
+       { push :: { address :: a, payload :: b } -> ST Global Unit
+       , event :: a -> Event b
+       }
+mailboxPure =
+  ( unsafeCoerce
+      :: ( forall a b
+            . Ord a
+           => ST Global
+                { push :: { address :: a, payload :: b } -> Effect Unit
+                , event :: a -> Event b
+                }
+         )
+      -> ( Ord a
+           => ST Global
+                { push :: { address :: a, payload :: b } -> ST Global Unit
+                , event :: a -> Event b
+                }
+         )
+  ) mailbox
 
-mailboxPure' :: forall a b. Ord a => ST Global { push :: STFn1 { address :: a, payload :: b } Global Unit, event :: a -> Event b }
-mailboxPure' = (unsafeCoerce :: (Ord a => ST Global { push :: EffectFn1 { address :: a, payload :: b } Unit, event :: a -> Event b }) -> (Ord a => ST Global { push :: STFn1 { address :: a, payload :: b } Global Unit, event :: a -> Event b })) mailbox'
+mailboxPure'
+  :: forall a b
+   . Ord a
+  => ST Global
+       { push :: STFn1 { address :: a, payload :: b } Global Unit
+       , event :: a -> Event b
+       }
+mailboxPure' =
+  ( unsafeCoerce
+      :: ( Ord a
+           => ST Global
+                { push :: EffectFn1 { address :: a, payload :: b } Unit
+                , event :: a -> Event b
+                }
+         )
+      -> ( Ord a
+           => ST Global
+                { push :: STFn1 { address :: a, payload :: b } Global Unit
+                , event :: a -> Event b
+                }
+         )
+  ) mailbox'
 
-mailbox' :: forall a b. Ord a => ST Global { push :: EffectFn1 { address :: a, payload :: b } Unit, event :: a -> Event b }
+mailbox'
+  :: forall a b
+   . Ord a
+  => ST Global
+       { push :: EffectFn1 { address :: a, payload :: b } Unit
+       , event :: a -> Event b
+       }
 mailbox' = do
   r <- STRef.new Map.empty
   pure
@@ -564,20 +681,28 @@ mailbox' = do
         o <- liftST $ STRef.read r
         case Map.lookup address o of
           Nothing -> pure unit
-          Just arr -> runEffectFn2 fastForeachE arr $ mkEffectFn1 \i -> runEffectFn1 i payload
+          Just arr -> runEffectFn2 fastForeachE arr $ mkEffectFn1 \i ->
+            runEffectFn1 i payload
     }
 
 --
 foreign import fastForeachThunk :: STFn1 (Array (ST Global Unit)) Global Unit
-foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
-foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
+foreign import fastForeachE
+  :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+
+foreign import fastForeachOhE
+  :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
 
 --
 
 delay_ :: forall a. Int -> Event a -> Event a
 delay_ = map (map (filterMap hush >>> map snd)) delay
 
-delay :: forall a. Int -> Event a -> Event (Either TimeoutId (Tuple (Maybe TimeoutId) a))
+delay
+  :: forall a
+   . Int
+  -> Event a
+  -> Event (Either TimeoutId (Tuple (Maybe TimeoutId) a))
 delay n (Event e) = Event $ mkSTFn2 \tf k -> do
   runSTFn2 e tf $ mkEffectFn1 \a -> do
     tid <- liftST $ STRef.new Nothing
@@ -603,7 +728,11 @@ bindToST e f = makeLemmingEvent \s k -> do
   pure u
 
 foldE :: forall a b. (a -> b -> Effect a) -> a -> Event b -> Event a
-foldE f b e = fix \i -> bindToEffect (sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e)) identity
+foldE f b e = fix \i -> bindToEffect
+  (sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e))
+  identity
 
 foldST :: forall a b. (a -> b -> ST Global a) -> a -> Event b -> Event a
-foldST f b e = fix \i -> bindToST (sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e)) identity
+foldST f b e = fix \i -> bindToST
+  (sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e))
+  identity

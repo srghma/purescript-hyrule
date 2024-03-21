@@ -16,4 +16,5 @@ position m = poll \e -> map (\{ value, pos } -> value pos) (withPosition m e)
 
 -- | A `Poll` which reports the mouse buttons which are currently pressed.
 buttons :: Mouse -> Poll (Set.Set Int)
-buttons m = poll \e -> map (\{ value, buttons: bs } -> value bs) (withButtons m e)
+buttons m = poll \e -> map (\{ value, buttons: bs } -> value bs)
+  (withButtons m e)

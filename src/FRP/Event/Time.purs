@@ -38,7 +38,8 @@ debounceWith process event = map _.value $ fix \processed ->
   let
     expiries :: Event Instant
     expiries =
-      map (\{ time, value } -> fromMaybe time (instant (unInstant time <> value)))
+      map
+        (\{ time, value } -> fromMaybe time (instant (unInstant time <> value)))
         (withTime (map _.period processed))
 
     comparison :: forall r. Maybe Instant -> { time :: Instant | r } -> Boolean

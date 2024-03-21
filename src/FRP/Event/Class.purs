@@ -53,17 +53,20 @@ class (Plus event, Alt event, Filterable event) <= IsEvent event where
 infixl 4 sampleOnRight as <|**>
 infixl 4 sampleOnLeft as <**|>
 
-sampleOnRightOp :: forall event a b. IsEvent event => event (a -> b) -> event a -> event b
+sampleOnRightOp
+  :: forall event a b. IsEvent event => event (a -> b) -> event a -> event b
 sampleOnRightOp ef ea = sampleOnRight ef ((#) <$> ea)
 
 infixl 4 sampleOnRightOp as <|*>
 
-sampleOnLeftOp :: forall event a b. IsEvent event => event (a -> b) -> event a -> event b
+sampleOnLeftOp
+  :: forall event a b. IsEvent event => event (a -> b) -> event a -> event b
 sampleOnLeftOp ef ea = sampleOnLeft ef ((#) <$> ea)
 
 infixl 4 sampleOnLeftOp as <*|>
 
-applyOp :: forall event a b. Applicative event => event a -> event (a -> b) -> event b
+applyOp
+  :: forall event a b. Applicative event => event a -> event (a -> b) -> event b
 applyOp ea ef = apply ((#) <$> ea) ef
 
 infixl 4 applyOp as <**>
@@ -77,7 +80,11 @@ folded :: forall event a. IsEvent event => Monoid a => event a -> event a
 folded = fold append mempty
 
 -- | Compute differences between successive event values.
-withLast :: forall event a. IsEvent event => event a -> event { now :: a, last :: Maybe a }
+withLast
+  :: forall event a
+   . IsEvent event
+  => event a
+  -> event { now :: a, last :: Maybe a }
 withLast e = filterMap identity (fold step Nothing e)
   where
   step Nothing a = Just { now: a, last: Nothing }
@@ -90,19 +97,27 @@ withLast e = filterMap identity (fold step Nothing e)
 -- | ```purescript
 -- | mapAccum (\x i -> Tuple (i + 1) (Tuple x i)) 0`.
 -- | ```
-mapAccum :: forall event a b c. IsEvent event => (a -> b -> Tuple a c) -> a -> event b -> event c
+mapAccum
+  :: forall event a b c
+   . IsEvent event
+  => (a -> b -> Tuple a c)
+  -> a
+  -> event b
+  -> event c
 mapAccum f acc xs = filterMap snd
   $ fold (\(Tuple a _) b -> pure <$> f a b) (Tuple acc Nothing) xs
 
 -- | Create an `Event` which samples the latest values from the first event
 -- | at the times when the second event fires, ignoring the values produced by
 -- | the second event.
-sampleOnRight_ :: forall event a b. IsEvent event => event a -> event b -> event a
+sampleOnRight_
+  :: forall event a b. IsEvent event => event a -> event b -> event a
 sampleOnRight_ a b = sampleOnRight a (const identity <$> b)
 
 infixl 4 sampleOnRight_ as <|*
 
-sampleOnLeft_ :: forall event a b. IsEvent event => event a -> event b -> event b
+sampleOnLeft_
+  :: forall event a b. IsEvent event => event a -> event b -> event b
 sampleOnLeft_ a b = sampleOnLeft a (const <$> b)
 
 infixl 4 sampleOnLeft_ as *|>
@@ -128,7 +143,8 @@ gateBy f sampled sampler = compact $
     <|*> sampler
 
 -- | Fold over values received from some `Event`, creating a new `Event`.
-fold :: forall event a b. IsEvent event => (b -> a -> b) -> b -> event a -> event b
+fold
+  :: forall event a b. IsEvent event => (b -> a -> b) -> b -> event a -> event b
 fold f b e = fix \i -> sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e)
 
 data OnceTracker a = Initial | Latch a | Stop
