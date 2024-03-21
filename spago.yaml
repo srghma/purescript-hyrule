@@ -35,6 +35,7 @@ package:
       - spec
       - profunctor
       - js-date
+      - console
 workspace:
   # WILL BREAK `spago test` with `purs-backend-es Unexpected argument: --run`
   # HOW IT WORKS: 1. it runs `purs compile` to make `.output/**/corefn.json` 2. it runs `purs-backend-es` to produce `.output-es`
