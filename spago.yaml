@@ -1,0 +1,51 @@
+package:
+  name: hyrule
+  publish:
+    version: 2.3.5
+    license: BSD-3-Clause
+    location:
+      githubOwner: mikesol
+      githubRepo: purescript-hyrule
+  dependencies:
+    - arrays
+    - control
+    - datetime
+    - effect
+    - either
+    - filterable
+    - foldable-traversable
+    - js-timers
+    - maybe
+    - newtype
+    - now
+    - ordered-collections
+    - prelude
+    - refs
+    - st
+    - tuples
+    - unsafe-coerce
+    - unsafe-reference
+    - web-events
+    - web-html
+    - web-uievents
+    - foreign-object
+    - debug
+    - random
+  test:
+    main: Test.Main
+    dependencies:
+      - aff
+      - spec
+      - profunctor
+      - js-date
+      - console
+workspace:
+  # WILL BREAK `spago test` with `purs-backend-es Unexpected argument: --run`
+  # HOW IT WORKS: 1. it runs `purs compile` to make `.output/**/corefn.json` 2. it runs `purs-backend-es` to produce `.output-es`
+  # backend:
+  #   cmd: purs-backend-es
+  #   args:
+  #     - build
+  extra_packages: {}
+  package_set:
+    registry: 50.4.0
