@@ -26,16 +26,34 @@ import FRP.Event (Event, makeEventE, mapAccum)
 import Safe.Coerce (coerce)
 
 -- | Create an event which reports the current time in milliseconds since the epoch.
-withTime :: forall a. Op (Effect Unit) { value :: a, time :: Instant } -> Op (Effect Unit) a
-withTime = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
+-- withTime :: forall a. Op (Effect Unit) { value :: a, time :: Instant } -> Op (Effect Unit) a
+
+withTimeX value = withTime (\publishTimeValue -> ?a) value
+
+withTime :: forall a. ( { time :: Instant
+      , value :: a
+      }
+      -> Effect Unit
+    )
+    -> a -> Effect Unit
+withTime = go
+ -- withTime = (coerce :: (({ time :: Instant, value :: a } -> Effect Unit) -> a -> Effect Unit) -> _ -> Op (Effect Unit) a) go
+
   where
+  go ::
+    ( { time :: Instant
+      , value :: a
+      }
+      -> Effect Unit
+    )
+    -> a -> Effect Unit
   go f value = do
     time <- now
     f { time, value }
 
 
-withDelay :: forall a. Int -> (Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a))) -> Op (Effect Unit) a
-withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
+withDelay :: forall a. Int -> (Either TimeoutId (Tuple TimeoutId a) -> (Effect Unit))  -> (a -> Effect Unit)
+withDelay n = go
   where
   go f value = launchAff_ do
     tid <- Avar.empty
@@ -45,13 +63,16 @@ withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
     Avar.put o tid
     liftEffect $ f (Left o)
 
--- | Create an event which fires every specified number of milliseconds.
-interval' :: forall a. (Op (Effect Unit) a -> Op (Effect Unit) Instant) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
-interval' f n = makeEventE \k -> do
+-- | Create an event which fires every specifised number of milliseconds.
+interval' :: forall a. ((a -> Effect Unit) -> (Instant -> Effect Unit)) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+interval' f n = makeEventE \publisherOfA -> do
   id <- setInterval n do
     time <- now
-    (coerce :: _ -> _ -> _ -> _ Unit) f k time
+    f publisherOfA time
   pure (clearInterval id)
+
+intervalMap :: forall a. (Instant -> a) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+intervalMap map = interval' (\publishA instant -> publishA (map instant))
 
 interval
   :: Int
