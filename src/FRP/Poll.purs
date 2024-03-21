@@ -200,6 +200,15 @@ merge a = case foldr go { l: [], m: [], r: [] } a of
   { l, m, r } -> PureAndPoll l (Poll.sham (Event.merge m) <|> Poll.merge r)
   where
 
+  -- go ::  Poll a
+  --   -> { l :: Array a
+  --      , m :: Array (Event a)
+  --      , r :: Array (APoll Event a)
+  --      }
+  --      -> { l :: Array a
+  --         , m :: Array (Event a)
+  --         , r :: Array (APoll Event a)
+  --         }
   go (OnlyPure q) { l, m, r } = { l: q <> l, m, r }
   go (OnlyEvent q) { l, m, r } = { l, m: [ q ] <> m, r }
   go (PureAndEvent x y) { l, m, r } = { l: x <> l, m: [ y ] <> m, r }
