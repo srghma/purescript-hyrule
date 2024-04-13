@@ -21,6 +21,7 @@
   , "ordered-collections"
   , "partial"
   , "prelude"
+  , "profunctor"
   , "random"
   , "refs"
   , "safe-coerce"
