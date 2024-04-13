@@ -32,8 +32,8 @@ import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, keepLatest, once, sampleOnRight)
 import FRP.Event.Time (debounce, withTime)
-import FRP.Poll as UnoptimizedPoll 
-import FRP.Poll.Experimental.Unsupported.May.Be.Deleted.At.Any.Time.Unoptimized as OptimizedPoll
+import FRP.Poll as OptimizedPoll
+import FRP.Poll.Unoptimized as UnoptimizedPoll
 import Foreign.Object.ST as STObject
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
