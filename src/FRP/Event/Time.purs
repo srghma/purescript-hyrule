@@ -34,7 +34,7 @@ withTime = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
     f { time, value }
 
 
-withDelay :: forall a. Int -> (Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a))) -> Op (Effect Unit) a
+withDelay :: forall a. Int -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
 withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
   where
   go f value = launchAff_ do
