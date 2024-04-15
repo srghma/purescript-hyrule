@@ -34,12 +34,12 @@ withTime = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
     f { time, value }
 
 
-withDelay :: forall a. Int -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
+withDelay :: forall a. (a -> Int) -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
 withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
   where
   go f value = launchAff_ do
     tid <- Avar.empty
-    o <- liftEffect $ setTimeout n $ launchAff_ do
+    o <- liftEffect $ setTimeout (n value) $ launchAff_ do
       t <- Avar.read tid
       liftEffect $ f (Right (Tuple t value))
     Avar.put o tid
