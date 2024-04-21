@@ -40,6 +40,9 @@ jobs:
       - name: Install esbuild
         run: pnpm install -g esbuild purs-backend-es
 
+      - name: Install
+        run: pnpm i
+
       - name: Check formatting
         run: pnpm run check
 
