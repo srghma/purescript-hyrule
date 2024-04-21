@@ -3,7 +3,10 @@ workspace:
     hyrule:
       path: ./
       dependencies:
+        - aff
         - arrays
+        - avar
+        - contravariant
         - control
         - datetime
         - effect
@@ -11,19 +14,23 @@ workspace:
         - filterable
         - foldable-traversable
         - foreign-object
+        - free
+        - functors
         - js-timers
         - maybe
         - newtype
         - now
         - ordered-collections
+        - partial
         - prelude
         - profunctor
         - random
         - refs
+        - safe-coerce
         - st
+        - tailrec
         - tuples
         - unsafe-coerce
-        - unsafe-reference
         - web-events
         - web-html
         - web-uievents
@@ -95,7 +102,6 @@ workspace:
         - typelevel-prelude
         - unfoldable
         - unsafe-coerce
-        - unsafe-reference
         - web-dom
         - web-events
         - web-file
@@ -1251,12 +1257,6 @@ packages:
     version: 6.0.0
     integrity: sha256-IqIYW4Vkevn8sI+6aUwRGvd87tVL36BBeOr0cGAE7t0=
     dependencies: []
-  unsafe-reference:
-    type: registry
-    version: 5.0.0
-    integrity: sha256-zU7BhfJU14nXQRZG9iADsp0mSiKhz07OcKyjRB2YT+Y=
-    dependencies:
-      - prelude
   web-dom:
     type: registry
     version: 6.0.0
