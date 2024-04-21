@@ -485,6 +485,7 @@ mailboxS
 mailboxS = do
   { push, event } <- Event.mailboxS
   pure { poll: map sham event, push }
+
 rant
   :: forall a
    . Poll a

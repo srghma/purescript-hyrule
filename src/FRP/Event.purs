@@ -536,7 +536,6 @@ makeEventE e = do
   unsubscribe <- e push
   pure { event, unsubscribe }
 
-
 -- | A fast fold over an object
 foldObj :: forall a b c. (forall r. STObject r b -> a -> ST r c) -> Event a -> Event c
 foldObj f e = makeEvent \s -> do
@@ -553,7 +552,7 @@ foldArr :: forall a b c. (forall r. STArray r b -> a -> ST r c) -> Event a -> Ev
 foldArr f e = makeEvent \s -> do
   o <- STArray.new
   let
-    go ::  a -> EventfulProgram c
+    go :: a -> EventfulProgram c
     go a = do
       justOneM (f o a)
   c <- s e go
