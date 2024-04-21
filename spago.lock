@@ -3,29 +3,40 @@ workspace:
     hyrule:
       path: ./
       dependencies:
+        - aff
         - arrays
+        - avar
+        - contravariant
         - control
         - datetime
         - effect
         - either
         - filterable
         - foldable-traversable
+        - foreign-object
+        - free
+        - functors
         - js-timers
         - maybe
         - newtype
         - now
         - ordered-collections
+        - partial
         - prelude
+        - profunctor
+        - random
         - refs
+        - safe-coerce
         - st
+        - tailrec
         - tuples
         - unsafe-coerce
-        - unsafe-reference
         - web-events
         - web-html
         - web-uievents
       test_dependencies:
         - aff
+        - debug
         - js-date
         - profunctor
         - spec
@@ -40,6 +51,7 @@ workspace:
         - contravariant
         - control
         - datetime
+        - debug
         - distributive
         - effect
         - either
@@ -49,6 +61,7 @@ workspace:
         - filterable
         - foldable-traversable
         - foreign
+        - foreign-object
         - fork
         - free
         - functions
@@ -76,6 +89,7 @@ workspace:
         - pipes
         - prelude
         - profunctor
+        - random
         - refs
         - safe-coerce
         - spec
@@ -85,9 +99,9 @@ workspace:
         - transformers
         - tuples
         - type-equality
+        - typelevel-prelude
         - unfoldable
         - unsafe-coerce
-        - unsafe-reference
         - web-dom
         - web-events
         - web-file
@@ -705,6 +719,13 @@ packages:
       - partial
       - prelude
       - tuples
+  debug:
+    type: registry
+    version: 6.0.2
+    integrity: sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=
+    dependencies:
+      - functions
+      - prelude
   distributive:
     type: registry
     version: 6.0.0
@@ -801,6 +822,23 @@ packages:
       - prelude
       - strings
       - transformers
+  foreign-object:
+    type: registry
+    version: 4.1.0
+    integrity: sha256-q24okj6mT+yGHYQ+ei/pYPj5ih6sTbu7eDv/WU56JVo=
+    dependencies:
+      - arrays
+      - foldable-traversable
+      - functions
+      - gen
+      - lists
+      - maybe
+      - prelude
+      - st
+      - tailrec
+      - tuples
+      - typelevel-prelude
+      - unfoldable
   fork:
     type: registry
     version: 6.0.0
@@ -1070,6 +1108,13 @@ packages:
       - newtype
       - prelude
       - tuples
+  random:
+    type: registry
+    version: 6.0.0
+    integrity: sha256-CJ611a35MPCE7XQMp0rdC6MCn76znlhisiCRgboAG+Q=
+    dependencies:
+      - effect
+      - integers
   refs:
     type: registry
     version: 6.0.0
@@ -1190,6 +1235,13 @@ packages:
     version: 4.0.1
     integrity: sha256-Hs9D6Y71zFi/b+qu5NSbuadUQXe5iv5iWx0226vOHUw=
     dependencies: []
+  typelevel-prelude:
+    type: registry
+    version: 7.0.0
+    integrity: sha256-uFF2ph+vHcQpfPuPf2a3ukJDFmLhApmkpTMviHIWgJM=
+    dependencies:
+      - prelude
+      - type-equality
   unfoldable:
     type: registry
     version: 6.0.0
@@ -1205,12 +1257,6 @@ packages:
     version: 6.0.0
     integrity: sha256-IqIYW4Vkevn8sI+6aUwRGvd87tVL36BBeOr0cGAE7t0=
     dependencies: []
-  unsafe-reference:
-    type: registry
-    version: 5.0.0
-    integrity: sha256-zU7BhfJU14nXQRZG9iADsp0mSiKhz07OcKyjRB2YT+Y=
-    dependencies:
-      - prelude
   web-dom:
     type: registry
     version: 6.0.0

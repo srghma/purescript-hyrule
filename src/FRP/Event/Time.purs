@@ -1,61 +1,69 @@
 module FRP.Event.Time
   ( withTime
-  , debounce
-  , debounceWith
+  , withDelay
+  , throttle
+  , interval'
   , interval
   ) where
 
 import Prelude
 
-import Data.DateTime.Instant (Instant, instant, unInstant)
-import Data.Maybe (Maybe, fromMaybe, maybe)
+import Data.Compactable (compact)
+import Data.DateTime.Instant (Instant, unInstant)
+import Data.Either (Either(..))
+import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
+import Data.Op (Op(..))
 import Data.Time.Duration (Milliseconds)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Aff.AVar as Avar
+import Effect.Class (liftEffect)
 import Effect.Now (now)
-import Effect.Timer (clearInterval, setInterval)
-import FRP.Event (Event, makeEvent, makeEventE, subscribe)
-import FRP.Event.Class (fix, gateBy)
+import Effect.Timer (TimeoutId, clearInterval, setInterval, setTimeout)
+import FRP.Event (Event, makeEventE, mapAccum)
+import Safe.Coerce (coerce)
 
 -- | Create an event which reports the current time in milliseconds since the epoch.
-withTime :: forall a. Event a -> Event { value :: a, time :: Instant }
-withTime e = makeEvent \k ->
-  subscribe e \value -> do
-    time <- now
-    k { time, value }
-
--- | On each event, ignore subsequent events for a given number of milliseconds.
-debounce :: forall a. Milliseconds -> Event a -> Event a
-debounce period = debounceWith (map { period, value: _ })
-
--- | Provided an input event and transformation, block the input event for the
--- | duration of the specified period on each output.
-debounceWith
-  :: forall a b
-   . (Event a -> Event { period :: Milliseconds, value :: b })
-  -> Event a
-  -> Event b
-debounceWith process event = map _.value $ fix \processed ->
-  let
-    expiries :: Event Instant
-    expiries =
-      map (\{ time, value } -> fromMaybe time (instant (unInstant time <> value)))
-        (withTime (map _.period processed))
-
-    comparison :: forall r. Maybe Instant -> { time :: Instant | r } -> Boolean
-    comparison a b = maybe true (_ < b.time) a
-
-    unblocked :: Event { time :: Instant, value :: a }
-    unblocked = gateBy comparison expiries stamped
-  in
-    process (map _.value unblocked)
+withTime :: forall a. Op (Effect Unit) { value :: a, time :: Instant } -> Op (Effect Unit) a
+withTime = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
   where
-  stamped :: Event { time :: Instant, value :: a }
-  stamped = withTime event
+  go f value = do
+    time <- now
+    f { time, value }
+
+withDelay :: forall a. Int -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
+withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
+  where
+  go f value = launchAff_ do
+    tid <- Avar.empty
+    o <- liftEffect $ setTimeout n $ launchAff_ do
+      t <- Avar.read tid
+      liftEffect $ f (Right (Tuple t value))
+    Avar.put o tid
+    liftEffect $ f (Left o)
 
 -- | Create an event which fires every specified number of milliseconds.
-interval :: Int -> Effect { event :: Event Instant, unsubscribe :: Effect Unit }
-interval n = makeEventE \k -> do
+interval' :: forall a. (Op (Effect Unit) a -> Op (Effect Unit) Instant) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
+interval' f n = makeEventE \k -> do
   id <- setInterval n do
     time <- now
-    k time
+    (coerce :: _ -> _ -> _ -> _ Unit) f k time
   pure (clearInterval id)
+
+interval
+  :: Int
+  -> Effect
+       { event :: Event Instant
+       , unsubscribe :: Effect Unit
+       }
+interval = interval' identity
+
+throttle :: forall a. Milliseconds -> Event { time :: Instant, value :: a } -> Event { time :: Instant, value :: a }
+throttle period = compact <<< mapAccum go Nothing
+  where
+  go Nothing { time, value } = Tuple (Just time) (Just { time, value })
+  go (Just lastTime) { time, value } =
+    if unwrap (unInstant time) - unwrap (unInstant lastTime) > unwrap period then Tuple (Just time) (Just { time, value })
+    else Tuple (Just lastTime) Nothing
