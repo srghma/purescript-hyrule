@@ -7,24 +7,34 @@ package:
       githubOwner: mikesol
       githubRepo: purescript-hyrule
   dependencies:
+    - aff
     - arrays
+    - avar
+    - contravariant
     - control
     - datetime
     - effect
     - either
     - filterable
     - foldable-traversable
+    - foreign-object
+    - free
+    - functors
     - js-timers
     - maybe
     - newtype
     - now
     - ordered-collections
+    - partial
     - prelude
+    - profunctor
+    - random
     - refs
+    - safe-coerce
     - st
+    - tailrec
     - tuples
     - unsafe-coerce
-    - unsafe-reference
     - web-events
     - web-html
     - web-uievents
@@ -32,6 +42,7 @@ package:
     main: Test.Main
     dependencies:
       - aff
+      - debug
       - spec
       - profunctor
       - js-date
@@ -42,6 +53,6 @@ workspace:
   #   cmd: purs-backend-es
   #   args:
   #     - build
-  extra_packages: {}
-  package_set:
+  extraPackages: {}
+  packageSet:
     registry: 50.4.0
