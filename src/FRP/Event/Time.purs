@@ -1,7 +1,7 @@
 module FRP.Event.Time
   ( withTime
   , withDelay
-  , debounce
+  , throttle
   , interval'
   , interval
   ) where
@@ -61,8 +61,8 @@ interval
        }
 interval = interval' identity
 
-debounce :: forall a. Milliseconds -> Event { time :: Instant, value :: a } -> Event { time :: Instant, value :: a }
-debounce period = compact <<< mapAccum go Nothing
+throttle :: forall a. Milliseconds -> Event { time :: Instant, value :: a } -> Event { time :: Instant, value :: a }
+throttle period = compact <<< mapAccum go Nothing
   where
   go Nothing { time, value } = Tuple (Just time) (Just { time, value })
   go (Just lastTime) { time, value } =

@@ -31,7 +31,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
 import FRP.Event.Class (fold, keepLatest, once, sampleOnRight)
-import FRP.Event.Time (debounce, withTime)
+import FRP.Event.Time (throttle, withTime)
 import FRP.Poll as OptimizedPoll
 import FRP.Poll.Unoptimized as UnoptimizedPoll
 import Foreign.Object.ST as STObject
@@ -999,10 +999,10 @@ main = do
               , false
               ]
             u
-          it "debounce debounces 1" do
+          it "throttle throttles 1" do
             { event, push } <- liftST $ Event.create
             rf <- liftEffect $ Ref.new []
-            unsub <- liftEffect $ Event.subscribe (debounce (Milliseconds 1000.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            unsub <- liftEffect $ Event.subscribe (throttle (Milliseconds 1000.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               under Op withTime push 1
               under Op withTime push 2
@@ -1015,12 +1015,12 @@ main = do
               o <- Ref.read rf
               map _.value o `shouldEqual` [ 5, 1 ]
               unsub
-          it "debounce debounces 2" do
+          it "throttle throttles 2" do
             let
               f emitSecond = do
                 { event, push } <- liftST $ Event.create
                 rf <- liftEffect $ Ref.new []
-                unsub <- liftEffect $ Event.subscribe (debounce (Milliseconds 500.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
+                unsub <- liftEffect $ Event.subscribe (throttle (Milliseconds 500.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
                 liftEffect $ under Op withTime push unit
                 when emitSecond do
                   liftEffect $ under Op withTime push unit

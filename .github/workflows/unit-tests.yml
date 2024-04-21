@@ -1,19 +1,47 @@
 name: Unit tests
-on: push
+
+on:
+  push:
+    # branches: [master]
+  pull_request:
+
 jobs:
-  container-job:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [14.x]
+
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Install dependencies
-        run: npm ci
-      - name: Spago install
-        run: npx spago -x test.dhall install
-      - name: Spago build
-        run: npx spago -x test.dhall build
-      - name: Spago test
-        run: npx spago -x test.dhall test
+      - uses: actions/checkout@v2
+
+      # - uses: purescript-contrib/setup-purescript@main
+      - uses: srghma/setup-purescript@main
+        with:
+          purescript: "latest"
+          spago: "0.93.27" # "latest" install old but will work after merge because makes http request, "next" throws error
+          psa: "latest"
+          purs-tidy: "latest"
+
+      - name: Cache PureScript dependencies
+        uses: actions/cache@v2
+        with:
+          key: ${{ runner.os }}-spago-${{ hashFiles('**/spago.lock') }}
+          path: |
+            .spago
+            output
+
+      - name: Install esbuild
+        run: npm install -g esbuild purs-backend-es
+
+      - name: Check formatting
+        run: npm run check
+
+      - name: Build source
+        run: spago build --pedantic-packages
+
+      - name: Run tests (non-bundled with default esbuild)
+        run: npm run test
+
+      - name: Run tests (bundled with default esbuild)
+        run: npm run test:esbuild
+
+      - name: Run tests (bundled with purs-backend-es)
+        run: npm run test:purs-backend-es
