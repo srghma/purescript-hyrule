@@ -12,36 +12,45 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      # - uses: purescript-contrib/setup-purescript@main
-      - uses: srghma/setup-purescript@main
-        with:
-          purescript: "latest"
-          spago: "0.93.27" # "latest" install old but will work after merge because makes http request, "next" throws error
-          psa: "latest"
-          purs-tidy: "latest"
-
-      - name: Cache PureScript dependencies
+      - name: Cache purescript dependencies
         uses: actions/cache@v2
         with:
-          key: ${{ runner.os }}-spago-${{ hashFiles('**/spago.lock') }}
           path: |
+            ~/.npm
             .spago
+            ${{ env.spago_global_cache }}
             output
+          key: >-
+            ${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ hashFiles('spago.yaml') }}
+
+      - uses: pnpm/action-setup@v2.2.4
+        name: Install pnpm
+        id: pnpm-install
+        with:
+          version: 7.13.2
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
 
       - name: Install esbuild
-        run: npm install -g esbuild purs-backend-es
+        run: pnpm install -g esbuild purs-backend-es
 
       - name: Check formatting
-        run: npm run check
+        run: pnpm run check
 
       - name: Build source
-        run: spago build --pedantic-packages
+        run: pnpm spago build --pedantic-packages
 
       - name: Run tests (non-bundled with default esbuild)
-        run: npm run test
+        run: pnpm run test
 
       - name: Run tests (bundled with default esbuild)
-        run: npm run test:esbuild
+        run: pnpm run test:esbuild
 
       - name: Run tests (bundled with purs-backend-es)
-        run: npm run test:purs-backend-es
+        run: pnpm run test:purs-backend-es
