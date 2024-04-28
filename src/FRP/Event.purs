@@ -50,7 +50,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
-import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2, runSTFn3)
+import Control.Monad.ST.Uncurried (STFn1, STFn2, STFn3, mkSTFn1, runSTFn1, runSTFn2, runSTFn3)
 import Data.Array.ST (STArray)
 import Data.Array.ST as STArray
 import Data.Compactable (class Compactable)
@@ -80,10 +80,10 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | combined using the various functions and instances provided in this module.
 -- |
 -- | Events are consumed by providing a callback using the `subscribe` function.
-newtype Event a = Event (STFn2 Boolean (EffectFn1 a Unit) Global (ST Global Unit))
+newtype Event a = Event (STFn1 (EffectFn1 a Unit) Global (ST Global Unit))
 
 instance functorEvent :: Functor Event where
-  map f (Event e) = Event (mkSTFn2 (\b k -> runSTFn2 e b (mkEffectFn1 (\a -> runEffectFn1 k (f a)))))
+  map f (Event e) = Event (mkSTFn1 (\k -> runSTFn1 e (mkEffectFn1 (\a -> runEffectFn1 k (f a)))))
 
 instance functorWithIndexEvent :: FunctorWithIndex Int Event where
   mapWithIndex f e = Class.mapAccum (\a b -> Tuple (a + 1) (f a b)) 0 e
@@ -129,9 +129,9 @@ instance filterableEvent :: Filterable.Filterable Event where
 
 instance altEvent :: Alt Event where
   alt (Event f) (Event g) =
-    Event $ mkSTFn2 \tf k -> ado
-      c1 <- runSTFn2 f tf k
-      c2 <- runSTFn2 g tf k
+    Event $ mkSTFn1 \k -> ado
+      c1 <- runSTFn1 f  k
+      c2 <- runSTFn1 g  k
       in
         do
           c1
@@ -140,10 +140,10 @@ instance altEvent :: Alt Event where
 -- | Merge together several events. This has the same functionality
 -- | as `oneOf`, but it is faster and less prone to stack explosions.
 merge :: forall a. Array (Event a) → Event a
-merge f = Event $ mkSTFn2 \tf k -> do
+merge f = Event $ mkSTFn1 \k -> do
   a <- STArray.new
   runSTFn2 fastForeachST f $ mkSTFn1 \(Event i) -> do
-    u <- runSTFn2 i tf k
+    u <- runSTFn1 i k
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
@@ -152,18 +152,18 @@ merge f = Event $ mkSTFn2 \tf k -> do
 -- | Merge together several events and map on the event. This has the same functionality
 -- | as `oneOf`, but it is faster and less prone to stack explosions.
 mergeMap :: forall a b. (a -> Event b) -> Array a → Event b
-mergeMap f0 f = Event $ mkSTFn2 \tf k -> do
+mergeMap f0 f = Event $ mkSTFn1 \k -> do
   a <- STArray.new
   runSTFn2 fastForeachST f $ mkSTFn1 \x -> do
     let (Event i) = f0 x
-    u <- runSTFn2 i tf k
+    u <- runSTFn1 i k
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
     runSTFn1 fastForeachThunkST o
 
 instance plusEvent :: Plus Event where
-  empty = Event (mkSTFn2 \_ _ -> pure (pure unit))
+  empty = Event $ mkSTFn1 \_ -> pure (pure unit)
 
 instance applyEvent :: Apply Event where
   apply a b = biSampleOn a ((#) <$> b)
@@ -180,11 +180,11 @@ instance semigroupEvent :: (Semigroup a) => Semigroup (Event a) where
 
 once :: forall a. Event a -> Event a
 once (Event e) =
-  Event $ mkSTFn2 \b k -> do
+  Event $ mkSTFn1 \k -> do
     latest <- STRef.new Nothing
     u <- STRef.new $ pure unit
     c <-
-      runSTFn2 e b $ mkEffectFn1 \a -> do
+      runSTFn1 e $ mkEffectFn1 \a -> do
         o <- liftST $ STRef.read latest
         case o of
           Nothing -> do
@@ -205,8 +205,8 @@ once (Event e) =
 filter :: forall a b. (a -> Maybe b) -> Event a -> Event b
 filter p (Event e) =
   Event
-    ( mkSTFn2 \tf k ->
-        runSTFn2 e tf
+    ( mkSTFn1 \k ->
+        runSTFn1 e
           ( mkEffectFn1 \a -> case p a of
               Just y -> runEffectFn1 k y
               Nothing -> pure unit
@@ -215,14 +215,14 @@ filter p (Event e) =
 
 sampleOnLeft :: forall a b. Event a -> Event (a -> b) -> Event b
 sampleOnLeft (Event e1) (Event e2) =
-  Event $ mkSTFn2 \b k -> do
+  Event $ mkSTFn1 \k -> do
     latest <- STRef.new Nothing
     c1 <-
-      runSTFn2 e1 b $ mkEffectFn1 \a -> do
+      runSTFn1 e1 $ mkEffectFn1 \a -> do
         o <- liftST $ STRef.read latest
         for_ o (\f -> runEffectFn1 k (f a))
     c2 <-
-      runSTFn2 e2 b $ mkEffectFn1 \f -> do
+      runSTFn1 e2 $ mkEffectFn1 \f -> do
         liftST $ void $ STRef.write (Just f) latest
     pure do
       c1
@@ -232,13 +232,13 @@ sampleOnLeft (Event e1) (Event e2) =
 -- | at the times when the second event fires.
 sampleOnRight :: forall a b. Event a -> Event (a -> b) -> Event b
 sampleOnRight (Event e1) (Event e2) =
-  Event $ mkSTFn2 \b k -> do
+  Event $ mkSTFn1 \k -> do
     latest <- STRef.new Nothing
     c1 <-
-      runSTFn2 e1 b $ mkEffectFn1 \a -> do
+      runSTFn1 e1 $ mkEffectFn1 \a -> do
         void $ liftST $ STRef.write (Just a) latest
     c2 <-
-      runSTFn2 e2 b $ mkEffectFn1 \f -> do
+      runSTFn1 e2 $ mkEffectFn1 \f -> do
         o <- liftST $ STRef.read latest
         for_ o (\a -> runEffectFn1 k (f a))
     pure do
@@ -247,16 +247,16 @@ sampleOnRight (Event e1) (Event e2) =
 
 biSampleOn :: forall a b. Event a -> Event (a -> b) -> Event b
 biSampleOn (Event e1) (Event e2) =
-  Event $ mkSTFn2 \tf k -> do
+  Event $ mkSTFn1 \k -> do
     latest1 <- STRef.new Nothing
     latest2 <- STRef.new Nothing
     c1 <-
-      runSTFn2 e1 tf $ mkEffectFn1 \a -> do
+      runSTFn1 e1  $ mkEffectFn1 \a -> do
         void $ liftST $ STRef.write (Just a) latest1
         res <- liftST $ STRef.read latest2
         for_ res (\f -> runEffectFn1 k (f a))
     c2 <-
-      runSTFn2 e2 tf $ mkEffectFn1 \f -> do
+      runSTFn1 e2  $ mkEffectFn1 \f -> do
         void $ liftST $ STRef.write (Just f) latest2
         res <- liftST $ STRef.read latest1
         for_ res (\a -> runEffectFn1 k (f a))
@@ -268,13 +268,13 @@ biSampleOn (Event e1) (Event e2) =
 -- | inner `Event`.
 keepLatest :: forall a. Event (Event a) -> Event a
 keepLatest (Event e) =
-  Event $ mkSTFn2 \tf k -> do
+  Event $ mkSTFn1 \k -> do
     cancelInner <- STRef.new (pure unit)
     cancelOuter <-
-      runSTFn2 e tf $ mkEffectFn1 \(Event inner) -> liftST do
+      runSTFn1 e $ mkEffectFn1 \(Event inner) -> liftST do
         ci <- STRef.read cancelInner
         ci
-        c <- runSTFn2 inner tf k
+        c <- runSTFn1 inner k
         void $ liftST $ STRef.write c cancelInner
     pure do
       ci <- STRef.read cancelInner
@@ -284,12 +284,12 @@ keepLatest (Event e) =
 -- | Compute a fixed point
 fix :: forall i. (Event i -> Event i) -> Event i
 fix f =
-  Event $ mkSTFn2 \tf k -> do
+  Event $ mkSTFn1 \k -> do
     { event, push } <- create
     let Event e0 = f event
     let Event e1 = event
-    c2 <- runSTFn2 e1 tf k
-    c1 <- runSTFn2 e0 tf (mkEffectFn1 push)
+    c2 <- runSTFn1 e1 k
+    c1 <- runSTFn1 e0 (mkEffectFn1 push)
     pure do
       c1
       c2
@@ -306,7 +306,7 @@ subscribe
    . Event a
   -> (a -> Effect Unit)
   -> Effect (Effect Unit)
-subscribe (Event e) k = liftST $ map liftST $ runSTFn2 e false (mkEffectFn1 k)
+subscribe (Event e) k = liftST $ map liftST $ runSTFn1 e (mkEffectFn1 k)
 
 -- | Subscribe to an `Event` by providing a callback.
 -- |
@@ -314,7 +314,7 @@ subscribe (Event e) k = liftST $ map liftST $ runSTFn2 e false (mkEffectFn1 k)
 subscribeO
   :: forall a
    . EffectFn2 (Event a) (EffectFn1 a Unit) (Effect Unit)
-subscribeO = mkEffectFn2 \(Event e) k -> liftST $ map liftST $ runSTFn2 e false k
+subscribeO = mkEffectFn2 \(Event e) k -> liftST $ map liftST $ runSTFn1 e k
 
 justOne :: forall a. a -> EventfulProgram a
 justOne a = liftF (Compose (pure (Tuple [ a ] unit)))
@@ -340,9 +340,9 @@ makeEvent
   :: forall a
    . ((forall b. Event b -> (b -> EventfulProgram a) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit))
   -> Event a
-makeEvent i = Event $ mkSTFn2 \tf k ->
+makeEvent i = Event $ mkSTFn1 \k ->
   i \(Event e) kx -> do
-    c <- runSTFn2 e tf $ mkEffectFn1 \ii -> do
+    c <- runSTFn1 e $ mkEffectFn1 \ii -> do
       let
         go = resume >>> case _ of
           Right _ -> pure $ Done unit
@@ -399,7 +399,7 @@ create_ tag = do
   idx <- STRef.new 0
   pure
     { event:
-        Event $ mkSTFn2 \_ k -> do
+        Event $ mkSTFn1 \k -> do
           rk <- STRef.new k
           ix <- STRef.read idx
           runSTFn3 insertObjHack ix rk subscribers
@@ -445,7 +445,7 @@ mailbox' = do
   idx <- STRef.new 0
   pure
     { event: \a ->
-        Event $ mkSTFn2 \_ k -> do
+        Event $ mkSTFn1 \k -> do
           o <- liftST $ STRef.read r
           subscribers <- case Map.lookup a o of
             Nothing -> do
@@ -491,7 +491,7 @@ mailboxS' = do
   idx <- STRef.new 0
   pure
     { event: \a ->
-        Event $ mkSTFn2 \_ k -> do
+        Event $ mkSTFn1 \k -> do
           o <- liftST $ STObject.peek a r
           subscribers <- case o of
             Nothing -> do
