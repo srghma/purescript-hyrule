@@ -30,6 +30,7 @@ module FRP.Poll
   , sample
   , sampleBy
   , sample_
+  , listen_
   , sham
   , solve
   , solve'
@@ -657,3 +658,12 @@ sampleBy f b e = sample (map f b) (map applyFlipped e)
 -- | Sample a `Poll` on some `Event`, discarding the event's values.
 sample_ :: forall pollable a b. Pollable pollable => Functor pollable => Poll a -> pollable b -> pollable a
 sample_ = sampleBy const
+
+listen_
+  :: forall a
+   . Poll a
+  -> (a -> Effect Unit)
+  -> Effect (Effect Unit)
+listen_ p f = do
+  { event, push } <- liftST Event.create
+  Event.subscribe (sample_ p event) f <* push unit
