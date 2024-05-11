@@ -130,8 +130,8 @@ instance filterableEvent :: Filterable.Filterable Event where
 instance altEvent :: Alt Event where
   alt (Event f) (Event g) =
     Event $ mkSTFn1 \k -> ado
-      c1 <- runSTFn1 f  k
-      c2 <- runSTFn1 g  k
+      c1 <- runSTFn1 f k
+      c2 <- runSTFn1 g k
       in
         do
           c1
@@ -251,12 +251,12 @@ biSampleOn (Event e1) (Event e2) =
     latest1 <- STRef.new Nothing
     latest2 <- STRef.new Nothing
     c1 <-
-      runSTFn1 e1  $ mkEffectFn1 \a -> do
+      runSTFn1 e1 $ mkEffectFn1 \a -> do
         void $ liftST $ STRef.write (Just a) latest1
         res <- liftST $ STRef.read latest2
         for_ res (\f -> runEffectFn1 k (f a))
     c2 <-
-      runSTFn1 e2  $ mkEffectFn1 \f -> do
+      runSTFn1 e2 $ mkEffectFn1 \f -> do
         void $ liftST $ STRef.write (Just f) latest2
         res <- liftST $ STRef.read latest1
         for_ res (\a -> runEffectFn1 k (f a))
