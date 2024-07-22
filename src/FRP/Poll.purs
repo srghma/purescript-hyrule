@@ -158,7 +158,7 @@ unfold f a e = step a (fold f a e)
 
 instance Alt Poll where
   alt (OnlyPure a) (OnlyPure x) = OnlyPure (a <> x)
-  alt (OnlyPure a) (OnlyEvent y) = PureAndPoll a (Poll.sham y)
+  alt (OnlyPure a) (OnlyEvent y) = PureAndEvent a y
   alt (OnlyPure a) (OnlyPoll y) = PureAndPoll a y
   alt (OnlyPure a) (PureAndEvent x y) = PureAndEvent (a <> x) y
   alt (OnlyPure a) (PureAndPoll x y) = PureAndPoll (a <> x) y
