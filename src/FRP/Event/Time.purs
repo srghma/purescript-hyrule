@@ -1,6 +1,7 @@
 module FRP.Event.Time
   ( withTime
   , withDelay
+  , withDelay'
   , throttle
   , interval'
   , interval
@@ -33,16 +34,19 @@ withTime = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
     time <- now
     f { time, value }
 
-withDelay :: forall a. Int -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
-withDelay n = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
+withDelay' :: forall a. (a -> Int) -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
+withDelay' nf = (coerce :: (_ -> a -> _ Unit) -> _ -> _) go
   where
   go f value = launchAff_ do
     tid <- Avar.empty
-    o <- liftEffect $ setTimeout n $ launchAff_ do
+    o <- liftEffect $ setTimeout (nf value) $ launchAff_ do
       t <- Avar.read tid
       liftEffect $ f (Right (Tuple t value))
     Avar.put o tid
     liftEffect $ f (Left o)
+
+withDelay :: forall a. Int -> Op (Effect Unit) (Either TimeoutId (Tuple TimeoutId a)) -> Op (Effect Unit) a
+withDelay = withDelay' <<< const
 
 -- | Create an event which fires every specified number of milliseconds.
 interval' :: forall a. (Op (Effect Unit) a -> Op (Effect Unit) Instant) -> Int -> Effect { event :: Event a, unsubscribe :: Effect Unit }
