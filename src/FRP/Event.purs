@@ -303,10 +303,6 @@ fix f =
 -- | Subscribe to an `Event` by providing a callback.
 -- |
 -- | `subscribe` returns a canceller function.
-
--- | Subscribe to an `Event` by providing a callback.
--- |
--- | `subscribe` returns a canceller function.
 subscribe
   :: forall a
    . Event a
