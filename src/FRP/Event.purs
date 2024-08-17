@@ -310,7 +310,7 @@ subscribe
   -> Effect (Effect Unit)
 subscribe (Event e) effectfulCallback = liftST $ map liftST $ runSTFn1 e (mkEffectFn1 effectfulCallback)
 
--- | Subscribe to an `Event` by providing a callback.
+-- | Subscribe to an `Event` by providing a callback. (optimized)
 -- |
 -- | `subscribe` returns a canceller function.
 subscribeO
