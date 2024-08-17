@@ -80,6 +80,12 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | combined using the various functions and instances provided in this module.
 -- |
 -- | Events are consumed by providing a callback using the `subscribe` function.
+-- |
+-- | Without optimizations it reads as
+-- |
+-- | ```purescript
+-- | type Event a = (a -> Effect Unit) -> ST Global (ST Global Unit))
+-- | ```
 newtype Event a = Event (STFn1 (EffectFn1 a Unit) Global (ST Global Unit))
 
 instance functorEvent :: Functor Event where
