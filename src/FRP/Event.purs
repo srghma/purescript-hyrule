@@ -46,7 +46,7 @@ import Control.Alternative (class Alt, class Plus)
 import Control.Apply (lift2)
 import Control.Monad.Free (Free, liftF, resume)
 import Control.Monad.Rec.Class (Step(..), tailRecM)
-import Control.Monad.ST (ST)
+import Control.Monad.ST (Region, ST)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
@@ -378,11 +378,13 @@ type EventIOO i o =
   , push :: EffectFn1 i Unit
   }
 
-data ObjHack (a :: Type)
+foreign import data ObjHack :: Region -> Type -> Type
 
-foreign import objHack :: forall a. String -> ST Global (ObjHack a)
-foreign import insertObjHack :: forall a. STFn3 Int a (ObjHack a) Global Unit
-foreign import deleteObjHack :: forall a. STFn2 Int (ObjHack a) Global Unit
+type role ObjHack nominal representational
+
+foreign import objHack :: forall a r. String -> ST r (ObjHack r a)
+foreign import insertObjHack :: forall a r. STFn3 Int a (ObjHack r a) Global Unit
+foreign import deleteObjHack :: forall a r. STFn2 Int (ObjHack r a) Global Unit
 
 memoize :: forall a. Event a -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 memoize e = do
@@ -528,7 +530,7 @@ foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) 
 fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
 fastForeachST = unsafeCoerce fastForeachE
 
-foreign import fastForeachOhE :: forall a. EffectFn2 (ObjHack a) (EffectFn1 a Unit) Unit
+foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit
 
 makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 makeEventE e = do
