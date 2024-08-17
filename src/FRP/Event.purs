@@ -536,7 +536,7 @@ foreign import fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) 
 fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
 fastForeachE = unsafeCoerce fastForeachST
 
-foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit
+foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit -- TODO: r looks ugly
 
 makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 makeEventE e = do
