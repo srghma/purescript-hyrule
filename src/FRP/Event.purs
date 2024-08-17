@@ -80,10 +80,16 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | combined using the various functions and instances provided in this module.
 -- |
 -- | Events are consumed by providing a callback using the `subscribe` function.
+-- |
+-- | Without optimizations it reads as
+-- |
+-- | ```purescript
+-- | type Event a = (a -> Effect Unit) -> ST Global (ST Global Unit))
+-- | ```
 newtype Event a = Event (STFn1 (EffectFn1 a Unit) Global (ST Global Unit))
 
 instance functorEvent :: Functor Event where
-  map f (Event e) = Event (mkSTFn1 (\k -> runSTFn1 e (mkEffectFn1 (\a -> runEffectFn1 k (f a)))))
+  map f (Event e) = Event (mkSTFn1 (\effectfulCallback -> runSTFn1 e (mkEffectFn1 (\a -> runEffectFn1 effectfulCallback (f a)))))
 
 instance functorWithIndexEvent :: FunctorWithIndex Int Event where
   mapWithIndex f e = Class.mapAccum (\a b -> Tuple (a + 1) (f a b)) 0 e
@@ -129,9 +135,9 @@ instance filterableEvent :: Filterable.Filterable Event where
 
 instance altEvent :: Alt Event where
   alt (Event f) (Event g) =
-    Event $ mkSTFn1 \k -> ado
-      c1 <- runSTFn1 f k
-      c2 <- runSTFn1 g k
+    Event $ mkSTFn1 \effectfulCallback -> ado
+      c1 <- runSTFn1 f effectfulCallback
+      c2 <- runSTFn1 g effectfulCallback
       in
         do
           c1
@@ -140,10 +146,10 @@ instance altEvent :: Alt Event where
 -- | Merge together several events. This has the same functionality
 -- | as `oneOf`, but it is faster and less prone to stack explosions.
 merge :: forall a. Array (Event a) → Event a
-merge f = Event $ mkSTFn1 \k -> do
+merge f = Event $ mkSTFn1 \effectfulCallback -> do
   a <- STArray.new
   runSTFn2 fastForeachST f $ mkSTFn1 \(Event i) -> do
-    u <- runSTFn1 i k
+    u <- runSTFn1 i effectfulCallback
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
@@ -152,11 +158,11 @@ merge f = Event $ mkSTFn1 \k -> do
 -- | Merge together several events and map on the event. This has the same functionality
 -- | as `oneOf`, but it is faster and less prone to stack explosions.
 mergeMap :: forall a b. (a -> Event b) -> Array a → Event b
-mergeMap f0 f = Event $ mkSTFn1 \k -> do
+mergeMap f0 f = Event $ mkSTFn1 \effectfulCallback -> do
   a <- STArray.new
   runSTFn2 fastForeachST f $ mkSTFn1 \x -> do
     let (Event i) = f0 x
-    u <- runSTFn1 i k
+    u <- runSTFn1 i effectfulCallback
     void $ liftST $ STArray.push u a
   pure do
     o <- liftST (STArray.freeze a)
@@ -180,7 +186,7 @@ instance semigroupEvent :: (Semigroup a) => Semigroup (Event a) where
 
 once :: forall a. Event a -> Event a
 once (Event e) =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     latest <- STRef.new Nothing
     u <- STRef.new $ pure unit
     c <-
@@ -189,7 +195,7 @@ once (Event e) =
         case o of
           Nothing -> do
             void $ liftST $ STRef.write (Just a) latest
-            runEffectFn1 k a
+            runEffectFn1 effectfulCallback a
             liftST $ join (STRef.read u)
           -- should not hit here
           Just _ -> pure unit
@@ -205,22 +211,22 @@ once (Event e) =
 filter :: forall a b. (a -> Maybe b) -> Event a -> Event b
 filter p (Event e) =
   Event
-    ( mkSTFn1 \k ->
+    ( mkSTFn1 \effectfulCallback ->
         runSTFn1 e
           ( mkEffectFn1 \a -> case p a of
-              Just y -> runEffectFn1 k y
+              Just y -> runEffectFn1 effectfulCallback y
               Nothing -> pure unit
           )
     )
 
 sampleOnLeft :: forall a b. Event a -> Event (a -> b) -> Event b
 sampleOnLeft (Event e1) (Event e2) =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     latest <- STRef.new Nothing
     c1 <-
       runSTFn1 e1 $ mkEffectFn1 \a -> do
         o <- liftST $ STRef.read latest
-        for_ o (\f -> runEffectFn1 k (f a))
+        for_ o (\f -> runEffectFn1 effectfulCallback (f a))
     c2 <-
       runSTFn1 e2 $ mkEffectFn1 \f -> do
         liftST $ void $ STRef.write (Just f) latest
@@ -232,7 +238,7 @@ sampleOnLeft (Event e1) (Event e2) =
 -- | at the times when the second event fires.
 sampleOnRight :: forall a b. Event a -> Event (a -> b) -> Event b
 sampleOnRight (Event e1) (Event e2) =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     latest <- STRef.new Nothing
     c1 <-
       runSTFn1 e1 $ mkEffectFn1 \a -> do
@@ -240,26 +246,26 @@ sampleOnRight (Event e1) (Event e2) =
     c2 <-
       runSTFn1 e2 $ mkEffectFn1 \f -> do
         o <- liftST $ STRef.read latest
-        for_ o (\a -> runEffectFn1 k (f a))
+        for_ o (\a -> runEffectFn1 effectfulCallback (f a))
     pure do
       c1
       c2
 
 biSampleOn :: forall a b. Event a -> Event (a -> b) -> Event b
 biSampleOn (Event e1) (Event e2) =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     latest1 <- STRef.new Nothing
     latest2 <- STRef.new Nothing
     c1 <-
       runSTFn1 e1 $ mkEffectFn1 \a -> do
         void $ liftST $ STRef.write (Just a) latest1
         res <- liftST $ STRef.read latest2
-        for_ res (\f -> runEffectFn1 k (f a))
+        for_ res (\f -> runEffectFn1 effectfulCallback (f a))
     c2 <-
       runSTFn1 e2 $ mkEffectFn1 \f -> do
         void $ liftST $ STRef.write (Just f) latest2
         res <- liftST $ STRef.read latest1
-        for_ res (\a -> runEffectFn1 k (f a))
+        for_ res (\a -> runEffectFn1 effectfulCallback (f a))
     pure do
       c1
       c2
@@ -268,13 +274,13 @@ biSampleOn (Event e1) (Event e2) =
 -- | inner `Event`.
 keepLatest :: forall a. Event (Event a) -> Event a
 keepLatest (Event e) =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     cancelInner <- STRef.new (pure unit)
     cancelOuter <-
       runSTFn1 e $ mkEffectFn1 \(Event inner) -> liftST do
         ci <- STRef.read cancelInner
         ci
-        c <- runSTFn1 inner k
+        c <- runSTFn1 inner effectfulCallback
         void $ liftST $ STRef.write c cancelInner
     pure do
       ci <- STRef.read cancelInner
@@ -284,19 +290,15 @@ keepLatest (Event e) =
 -- | Compute a fixed point
 fix :: forall i. (Event i -> Event i) -> Event i
 fix f =
-  Event $ mkSTFn1 \k -> do
+  Event $ mkSTFn1 \effectfulCallback -> do
     { event, push } <- create
     let Event e0 = f event
     let Event e1 = event
-    c2 <- runSTFn1 e1 k
+    c2 <- runSTFn1 e1 effectfulCallback
     c1 <- runSTFn1 e0 (mkEffectFn1 push)
     pure do
       c1
       c2
-
--- | Subscribe to an `Event` by providing a callback.
--- |
--- | `subscribe` returns a canceller function.
 
 -- | Subscribe to an `Event` by providing a callback.
 -- |
@@ -306,15 +308,15 @@ subscribe
    . Event a
   -> (a -> Effect Unit)
   -> Effect (Effect Unit)
-subscribe (Event e) k = liftST $ map liftST $ runSTFn1 e (mkEffectFn1 k)
+subscribe (Event e) effectfulCallback = liftST $ map liftST $ runSTFn1 e (mkEffectFn1 effectfulCallback)
 
--- | Subscribe to an `Event` by providing a callback.
+-- | Subscribe to an `Event` by providing a callback. (optimized)
 -- |
 -- | `subscribe` returns a canceller function.
 subscribeO
   :: forall a
    . EffectFn2 (Event a) (EffectFn1 a Unit) (Effect Unit)
-subscribeO = mkEffectFn2 \(Event e) k -> liftST $ map liftST $ runSTFn1 e k
+subscribeO = mkEffectFn2 \(Event e) effectfulCallback -> liftST $ map liftST $ runSTFn1 e effectfulCallback
 
 justOne :: forall a. a -> EventfulProgram a
 justOne a = liftF (Compose (pure (Tuple [ a ] unit)))
@@ -340,7 +342,7 @@ makeEvent
   :: forall a
    . ((forall b. Event b -> (b -> EventfulProgram a) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit))
   -> Event a
-makeEvent i = Event $ mkSTFn1 \k ->
+makeEvent i = Event $ mkSTFn1 \effectfulCallback ->
   i \(Event e) kx -> do
     c <- runSTFn1 e $ mkEffectFn1 \ii -> do
       let
@@ -348,7 +350,7 @@ makeEvent i = Event $ mkSTFn1 \k ->
           Right _ -> pure $ Done unit
           Left (Compose prog) -> do
             Tuple a rest <- liftST prog
-            runEffectFn2 fastForeachE a k
+            runEffectFn2 fastForeachE a effectfulCallback
             pure $ Loop rest
       tailRecM go (kx ii)
     pure c
@@ -401,20 +403,20 @@ create_ tag = do
   idx <- STRef.new 0
   pure
     { event:
-        Event $ mkSTFn1 \k -> do
-          rk <- STRef.new k
+        Event $ mkSTFn1 \effectfulCallback -> do
+          recordOfEffectfulCallbacks <- STRef.new effectfulCallback
           ix <- STRef.read idx
-          runSTFn3 insertObjHack ix rk subscribers
+          runSTFn3 insertObjHack ix recordOfEffectfulCallbacks subscribers
           void $ STRef.modify (_ + 1) idx
           pure do
-            void $ STRef.write mempty rk
+            void $ STRef.write mempty recordOfEffectfulCallbacks
             runSTFn2 deleteObjHack ix subscribers
             pure unit
     , push:
         \a -> do
-          runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
-            k <- liftST $ STRef.read rk
-            runEffectFn1 k a
+          runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \recordOfEffectfulCallbacks -> do
+            effectfulCallback <- liftST $ STRef.read recordOfEffectfulCallbacks
+            runEffectFn1 effectfulCallback a
     }
 
 type PureEventIO a =
@@ -447,7 +449,7 @@ mailbox' = do
   idx <- STRef.new 0
   pure
     { event: \a ->
-        Event $ mkSTFn1 \k -> do
+        Event $ mkSTFn1 \effectfulCallback -> do
           o <- liftST $ STRef.read r
           subscribers <- case Map.lookup a o of
             Nothing -> do
@@ -455,21 +457,21 @@ mailbox' = do
               void $ STRef.modify (Map.insert a oh) r
               pure oh
             Just s -> pure s
-          rk <- STRef.new k
+          recordOfEffectfulCallbacks <- STRef.new effectfulCallback
           ix <- STRef.read idx
-          runSTFn3 insertObjHack ix rk subscribers
+          runSTFn3 insertObjHack ix recordOfEffectfulCallbacks subscribers
           void $ STRef.modify (_ + 1) idx
           pure do
-            void $ STRef.write mempty rk
+            void $ STRef.write mempty recordOfEffectfulCallbacks
             runSTFn2 deleteObjHack ix subscribers
             pure unit
     , push: mkEffectFn1 \{ address, payload } -> do
         o <- liftST $ STRef.read r
         case Map.lookup address o of
           Nothing -> pure unit
-          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
-            k <- liftST $ STRef.read rk
-            runEffectFn1 k payload
+          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \recordOfEffectfulCallbacks -> do
+            effectfulCallback <- liftST $ STRef.read recordOfEffectfulCallbacks
+            runEffectFn1 effectfulCallback payload
         pure unit
     }
 
@@ -493,7 +495,7 @@ mailboxS' = do
   idx <- STRef.new 0
   pure
     { event: \a ->
-        Event $ mkSTFn1 \k -> do
+        Event $ mkSTFn1 \effectfulCallback -> do
           o <- liftST $ STObject.peek a r
           subscribers <- case o of
             Nothing -> do
@@ -501,21 +503,21 @@ mailboxS' = do
               void $ STObject.poke a oh r
               pure oh
             Just s -> pure s
-          rk <- STRef.new k
+          recordOfEffectfulCallbacks <- STRef.new effectfulCallback
           ix <- STRef.read idx
-          runSTFn3 insertObjHack ix rk subscribers
+          runSTFn3 insertObjHack ix recordOfEffectfulCallbacks subscribers
           void $ STRef.modify (_ + 1) idx
           pure do
-            void $ STRef.write mempty rk
+            void $ STRef.write mempty recordOfEffectfulCallbacks
             runSTFn2 deleteObjHack ix subscribers
             pure unit
     , push: mkEffectFn1 \{ address, payload } -> do
         o <- liftST $ STObject.peek address r
         case o of
           Nothing -> pure unit
-          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \rk -> do
-            k <- liftST $ STRef.read rk
-            runEffectFn1 k payload
+          Just subscribers -> runEffectFn2 fastForeachOhE subscribers $ mkEffectFn1 \recordOfEffectfulCallbacks -> do
+            effectfulCallback <- liftST $ STRef.read recordOfEffectfulCallbacks
+            runEffectFn1 effectfulCallback payload
         pure unit
     }
 
@@ -525,12 +527,12 @@ foreign import fastForeachThunkST :: STFn1 (Array (ST Global Unit)) Global Unit
 fastForeachThunkE :: EffectFn1 (Array (Effect Unit)) Unit
 fastForeachThunkE = unsafeCoerce fastForeachThunkST
 
-foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+foreign import fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
 
-fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
-fastForeachST = unsafeCoerce fastForeachE
+fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+fastForeachE = unsafeCoerce fastForeachST
 
-foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit
+foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit -- TODO: r looks ugly
 
 makeEventE :: forall a. ((a -> Effect Unit) -> Effect (Effect Unit)) -> Effect { event :: Event a, unsubscribe :: Effect Unit }
 makeEventE e = do
