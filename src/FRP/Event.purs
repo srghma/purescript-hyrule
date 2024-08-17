@@ -531,10 +531,10 @@ foreign import fastForeachThunkST :: STFn1 (Array (ST Global Unit)) Global Unit
 fastForeachThunkE :: EffectFn1 (Array (Effect Unit)) Unit
 fastForeachThunkE = unsafeCoerce fastForeachThunkST
 
-foreign import fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+foreign import fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
 
-fastForeachST :: forall a. STFn2 (Array a) (STFn1 a Global Unit) Global Unit
-fastForeachST = unsafeCoerce fastForeachE
+fastForeachE :: forall a. EffectFn2 (Array a) (EffectFn1 a Unit) Unit
+fastForeachE = unsafeCoerce fastForeachST
 
 foreign import fastForeachOhE :: forall a r. EffectFn2 (ObjHack r a) (EffectFn1 a Unit) Unit
 
