@@ -5,6 +5,7 @@ module FRP.Poll.Unoptimized
   , class Pollable
   , create
   , createPure
+  , createTagged
   , deflect
   , derivative
   , derivative'
@@ -23,6 +24,7 @@ module FRP.Poll.Unoptimized
   , sample
   , sampleBy
   , sample_
+  , listen_
   , sham
   , solve
   , solve'
@@ -464,6 +466,15 @@ create = do
   { poll: p } <- rant (sham event)
   pure { poll: p, push }
 
+createTagged
+  :: forall a
+   . String
+  -> ST Global (PollIO a)
+createTagged tag = do
+  { event, push } <- Event.createTagged tag
+  { poll: p } <- rant (sham event)
+  pure { poll: p, push }
+
 createPure
   :: forall a
    . ST Global (PurePollIO a)
@@ -552,3 +563,12 @@ keepLatest a = APoll \e ->
         KeepLatestStart b ff -> Just (sampleBy (\bb _ -> KeepLatestLast (ff bb)) b (EClass.once ie))
         _ -> empty
     ]
+
+listen_
+  :: forall a
+   . Poll a
+  -> (a -> Effect Unit)
+  -> Effect (Effect Unit)
+listen_ p f = do
+  { event, push } <- liftST Event.create
+  Event.subscribe (sample_ p event) f <* push unit
