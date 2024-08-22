@@ -143,7 +143,8 @@ merge a = APoll \e -> Event.mergeMap (flip sample e) a
 mergeMap :: forall a b. (a -> Poll b) -> Array a → Poll b
 mergeMap f a = APoll \e -> Event.mergeMap (flip sample e <<< f) a
 
--- | A poll where the answers are rigged by the nefarious `Event a`
+-- | A poll where the answers are rigged (influenced/given by) by the nefarious `Event a`
+-- | `sham` (fake) because "poll is not fair, because it is controlled by an event"
 sham :: forall event. IsEvent event => event ~> APoll event
 sham i = poll \e -> EClass.sampleOnLeft i e
 
