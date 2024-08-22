@@ -497,6 +497,7 @@ mailboxS = do
   { push, event } <- Event.mailboxS
   pure { poll: map sham event, push }
 
+-- | Once an event comes in, it just goes on and on and on and on (a rant) without listening to future events
 rant
   :: forall a
    . Poll a
