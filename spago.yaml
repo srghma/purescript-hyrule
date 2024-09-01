@@ -1,5 +1,6 @@
 package:
   name: hyrule
+  # main: Test.Examples.PollUnoptimized.DoublePoll
   publish:
     version: 2.3.5
     license: BSD-3-Clause
@@ -20,6 +21,8 @@ package:
     - foreign-object
     - free
     - functors
+    # - console
+    # - debug
     - js-timers
     - maybe
     - newtype
@@ -43,6 +46,7 @@ package:
     dependencies:
       - aff
       - debug
+      - console
       - spec
       - profunctor
       - js-date

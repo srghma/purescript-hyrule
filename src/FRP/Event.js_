@@ -1,0 +1,157 @@
+import util from 'node:util';
+
+function functionToString(func) {
+  return `Function: ${func.name || 'anonymous'}\nSource: ${func.toString()}`;
+}
+
+function deepInspect(value, depth = 0) {
+  if (typeof value === 'function') {
+    return functionToString(value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (Array.isArray(value)) {
+      return value.map(item => deepInspect(item, depth + 1));
+    }
+    const inspectedObject = {};
+    for (const [key, val] of Object.entries(value)) {
+      inspectedObject[key] = deepInspect(val, depth + 1);
+    }
+    return inspectedObject;
+  }
+  return value;
+}
+
+function log(...args) {
+  console.log('-----------------------');
+  const formatted = args.map(arg => {
+    const inspected = deepInspect(arg);
+    return util.inspect(inspected, { showHidden: false, depth: null, colors: true });
+  }).join('\n');
+  console.log(formatted);
+  console.log('-----------------------');
+}
+
+
+export const fastForeachThunkST = (as) => {
+  for (var i = 0, l = as.length; i < l; i++) {
+    as[i]();
+  }
+};
+
+export const fastForeachST = (as, f) => {
+  for (var i = 0, l = as.length; i < l; i++) {
+    f(as[i]);
+  }
+};
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+/////////////////////////
+
+// Initializes a new object with a tag and properties to manage a sequence of subscriptions and function calls.
+export const objHack = (tag) => () => ({
+  isRunning: false,       // Flag to track if the object is currently processing subscriptions.
+  queue: [],              // Queue to hold functions that need to be processed sequentially.
+  subscriptions: [],        // Array of objects, each representing a set of subscriptions.
+  tag,                    // A tag or identifier for the object.
+});
+
+// Inserts a key-value pair into the latest subscription object in the subscriptions array.
+export const insertObjHack = (key, value, obj) => {
+  log("insertObjHack", { key, value, obj })
+  obj.subscriptions.push({ [key]: value })
+
+  // Note: We do not push a new subscription object here because this function
+  // is only responsible for adding key-value pairs to the most recent subscription.
+  // const latestSubscription = obj.subscriptions[obj.subscriptions.length - 1];
+  // latestSubscription[key] = value;  // Add the key-value pair to the latest subscription.
+};
+
+// Deletes a key from any subscription object in the subscriptions array.
+export const deleteObjHack = (key, obj) => {
+  log("deleteObjHack", { key, obj })
+  obj.subscriptions = obj.subscriptions.map(x => Object.fromEntries(Object.entries(x).filter(([k, _v]) => k !== key)))
+  // for (const subscription of obj.subscriptions) {
+  //   if (delete subscription[key]) { // If the key exists and is deleted, return true.
+  //     return true;
+  //   }
+  // }
+  // return false; // Return false if the key is not found in any subscription.
+};
+
+// Recursively applies a function to each value in the subscriptions array.
+const constructResult = (obj, fn) => {
+  // log("constructResult", { obj, result, fn, index })
+  // obj.subscriptions.push({});  // Start a new subscription stage.
+  for (const subscription of obj.subscriptions) {
+    for (const [key, value] of Object.entries(subscription)) {
+      // console.log("constructResult subscriptions[index]", obj.subscriptions[index])
+      // console.log("constructResult key, value", key, value)
+      const r = fn(value);
+      // console.log("constructResult r", r)
+      // console.log("constructResult subscriptions[index + 1]", obj.subscriptions[index + 1])
+      // if (Object.keys(obj.obj.subscriptions[index + 1]).length > 0) {
+      //   constructResult(obj, result, fn, index + 1);
+      // }
+      // obj.subscriptions[index + 1] = {};  // Reset the next subscription stage.
+      // obj.subscriptions.length = index + 2;  // Ensure subscriptions array has only the current and next stage.
+      // result[key] = value;  // Update the result object with the final value of the subscription.
+    }
+  }
+  // log("constructResult END", { obj, result, fn, index })
+};
+
+// Processes the queue of functions, applying each to the object in sequence.
+export const fastForeachOhE = (obj, fn) => {
+  log("fastForeachOhE", { obj, fn })
+
+
+  while (true) {
+    if (obj.isRunning) {  // If the object is already processing, queue the function and return.
+      obj.queue.push(currentFn);
+      log("fastForeachOhE", { obj, fn })
+      return;
+    }
+
+    obj.isRunning = true;  // Mark the object as running to prevent re-entry.
+    const result = {};
+    constructResult(obj.mutations, result, currentFn, 0);  // Apply all mutations starting from index 0.
+    obj.mutations.length = 0;  // Clear all mutations after processing.
+    obj.mutations.push(result);  // Start a new mutation with the final result.
+    obj.isRunning = false;  // Mark the object as not running, allowing new functions to be processed.
+
+    currentFn = obj.queue.shift();  // Get the next function in the queue.
+    if (currentFn === undefined) {  // Exit the loop if no more functions are left.
+      break;
+    }
+  }
+
+  for (const currentFn of [fn, ...obj.queue]) {
+    if (obj.isRunning) {  // If the object is already processing, queue the function and return.
+      obj.queue.push(fn);
+      log("fastForeachOhE", { obj, fn })
+      return;
+    }
+
+    obj.isRunning = true;  // Mark the object as running to prevent re-entry.
+
+    // const result = {};
+    constructResult(obj, currentFn);  // Apply all subscriptions starting from index 0.
+    // obj.subscriptions.length = 0;  // Clear all subscriptions after processing.
+    // obj.subscriptions.push(result);  // Start a new subscription with the final result.
+  }
+  obj.subscriptions = [fn, ...obj.queue]
+
+  obj.isRunning = false;  // Mark the object as not running, allowing new functions to be processed.
+  obj.queue = []
+  log("fastForeachOhE END", { obj, fn })
+};
