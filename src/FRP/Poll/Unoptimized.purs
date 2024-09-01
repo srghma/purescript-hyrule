@@ -15,6 +15,7 @@ module FRP.Poll.Unoptimized
   , gateBy
   , integral
   , integral'
+  , listen_
   , mailbox
   , mailboxS
   , merge
@@ -24,7 +25,6 @@ module FRP.Poll.Unoptimized
   , sample
   , sampleBy
   , sample_
-  , listen_
   , sham
   , solve
   , solve'
@@ -58,10 +58,9 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
-import FRP.Event (class IsEvent, Event, fold, justManyM, justNone, justOne, justOneM, makeEvent, subscribe, withLast)
+import FRP.Event (class IsEvent, Event, EventfulProgram, ProgramfulEvent, fold, justManyM, justNone, justOne, justOneM, makeEvent, subscribe, withLast)
 import FRP.Event as Event
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class (sampleOnRightOp)
 import FRP.Event.Class as EClass
 
 -- | `APoll` is the more general type of `Poll`, which is parameterized
@@ -70,13 +69,17 @@ import FRP.Event.Class as EClass
 -- | Normally, you should use `Poll` instead, but this type
 -- | can also be used with other types of events, including the ones in the
 -- | `Semantic` module.
-newtype APoll event a = APoll (forall b. event (a -> b) -> event b)
+newtype APoll event a = APoll (forall r. event (a -> r) -> event r)
 
 -- | A `Poll` acts like a survey or poll. We get a series of questions in time
--- | of form `a -> b`, and we respond with `b`.
+-- | of form `a -> r`, and we respond with `r`.
 -- |
--- | We can construct a sample a `Poll` from some `Event`, combine `Poll`s
+-- | We can construct a `Poll` from some `Event`, combine `Poll`s
 -- | using `Applicative`, and sample a final `Poll` on some other `Event`.
+-- |
+-- | Very similar to Yoneda `newtype Yoneda f a = Yoneda (forall b. (a -> r) -> f r)`.
+-- | Yoneda lemma tells that `(a -> r) -> r` is same as having just `a`
+-- | and `(a -> r) -> f r` is same as having just `f a`.
 type Poll = APoll Event
 
 instance functorAPoll :: Functor event => Functor (APoll event) where
@@ -88,6 +91,25 @@ instance functorWithIndexAPoll :: (IsEvent event, Pollable event event) => Funct
 instance applyAPoll :: Apply event => Apply (APoll event) where
   apply (APoll f) (APoll a) = APoll \e -> (map (\ff (Tuple bc aaa) -> bc (ff aaa)) (f (e $> identity))) <*> a (map Tuple e)
 
+-- Intuitively works like a highly dense infinite stream
+-- `List (Cow, Time) = [ (C1,0), (C1,1), ... ]`
+--
+-- will repeat for each push
+--
+-- ```purescript
+-- data Cow = C1 | C2
+-- test = do
+--   surveymonger <- liftST $ createPure -- List (Cow -> MichlenStars, Time)
+--   let
+--     (whoWantsToAnswer :: Poll Cow) = pure C1 <|> pure C2 -- will give to callback both immediately, on ofter another
+--     (answers :: Event Int) = sample whoWantsToAnswer surveymonger.event
+--   _ <- subscribe answers \v ->  log $ "answers GOT " <> show v
+--   surveymonger.push(...)
+-- ```
+--
+-- push to `surveymonger` | C1->1       C1->11
+--                        | C2->2       C2->12
+-- get in `answers`       | 1      2    11      12
 instance applicativeAPoll :: Apply event => Applicative (APoll event) where
   pure a = APoll \e -> applyFlipped a <$> e
 
@@ -115,11 +137,19 @@ instance ringAPoll :: (Apply event, Ring a) => Ring (APoll event a) where
   sub = lift2 sub
 
 -- | Construct a `Poll` from its sampling function.
-poll :: forall event a. (forall b. event (a -> b) -> event b) -> APoll event a
+poll :: forall event a. (forall r. event (a -> r) -> event r) -> APoll event a
 poll = APoll
 
 -- | Create a `Poll` which is updated when an `Event` fires, by providing
 -- | an initial value.
+-- |
+-- | ```
+-- | push to `cowSupplier`                              |                   C2
+-- | push to `surveymonger`                             | C1->1   C1->11          C1->21
+-- |                                                    | C2->2   C2->12          C2->22
+-- |                                                    | C3->3   C3->13          C3->23
+-- | get in `sample (step C1 cowSupplier) surveymonger` | 1       11        _     22
+-- | ```
 step :: forall event a. IsEvent event => a -> event a -> APoll event a
 step a e = APoll (\e0 -> EClass.sampleOnRight ((EClass.once e0 $> a) `alt` e) e0)
 
@@ -145,6 +175,37 @@ mergeMap f a = APoll \e -> Event.mergeMap (flip sample e <<< f) a
 
 -- | A poll where the answers are rigged (influenced/given by) by the nefarious `Event a`
 -- | `sham` (fake) because "poll is not fair, because it is controlled by an event"
+-- |
+-- | ```purescript
+-- | data Cow = C1 | C2 | C3
+-- | test = do
+-- |   cowSupplier <- liftST $ create -- List (Cow, Time)
+-- |   surveymonger <- liftST $ create -- List (Cow -> MichlenStars, Time)
+-- |   let
+-- |     (whoWantsToAnswer :: Poll Cow) = sham cowSupplier.event
+-- |     (answers :: Event Int) = sample whoWantsToAnswer surveymonger.event
+-- |   _ <- subscribe answers \v ->  log $ "answers GOT " <> show v
+-- |   cowSupplier.push(...)
+-- |   surveymonger.push(...)
+-- | ```
+-- |
+-- | ```
+-- | push to `cowSupplier`                           |                   C1             C2
+-- | push to `surveymonger`                          | C1->1   C1->11          C1->21
+-- |                                                 | C2->2   C2->12          C2->22
+-- |                                                 | C3->3   C3->13          C3->23
+-- | get in `sample (sham cowSupplier) surveymonger` | _       _         11    _        22
+-- | ```
+-- |
+-- | or
+-- |
+-- | ```
+-- | push to `cowSupplier`                           | C1                      C2             C3
+-- | push to `surveymonger`                          |       C1->1   C1->11          C1->21
+-- |                                                 |       C2->2   C2->12          C2->22
+-- |                                                 |       C3->3   C3->13          C3->23
+-- | get in `sample (sham cowSupplier) surveymonger` | _     _       _         12    _        23
+-- | ```
 sham :: forall event. IsEvent event => event ~> APoll event
 sham i = poll \e -> EClass.sampleOnLeft i e
 
@@ -154,8 +215,10 @@ dredge f (APoll ea) = APoll \eb -> eb <*> f (ea (eb $> identity))
 
 class Pollable event pollable | pollable -> event where
   -- | Sample a `Poll` on some `Event`.
-  sample :: forall a b. APoll event a -> pollable (a -> b) -> pollable b
+  sample :: forall a r. APoll event a -> pollable (a -> r) -> pollable r
 
+-- `sample poll poll = sampleOnRight poll poll`
+-- `sample poll event = poll event`
 instance (IsEvent event, Pollable event event) => Pollable event (APoll event) where
   sample = EClass.sampleOnRight
 else instance IsEvent event => Pollable event event where
@@ -163,16 +226,42 @@ else instance IsEvent event => Pollable event event where
 
 -- | Sample a `Poll` on some `Event` by providing a combining function.
 sampleBy :: forall event pollable a b c. Pollable event pollable => Functor event => Functor pollable => (a -> b -> c) -> APoll event a -> pollable b -> pollable c
-sampleBy f b e = sample (map f b) (map applyFlipped e)
+sampleBy f apollA pollableB = sample (map f apollA :: APoll event (b -> c)) (map applyFlipped pollableB :: pollable ((b -> c) -> c))
 
 -- | Sample a `Poll` on some `Event`, discarding the event's values.
 sample_ :: forall event pollable a b. Pollable event pollable => Functor event => Functor pollable => APoll event a -> pollable b -> pollable a
-sample_ = sampleBy const
+sample_ = (sampleBy :: (a -> b -> a) -> APoll event a -> pollable b -> pollable a) const
 
 -- | Switch `Poll`s based on an `Event`.
+-- |
+-- | ```purescript
+-- | data Cow = C1 | C2
+-- | data Horse = H1 | H2
+-- | type Animals = Either Horse Cow
+-- | test = do
+-- |   pollSupplier <- liftST $ createPure
+-- |   surveymonger <- liftST $ createPure
+-- |   let
+-- |     (onlyCowsAnswer :: Poll Animals) = pure (Right C1) <|> pure (Right C2)
+-- |     (onlyHorsesAnswer :: Poll Animals) = pure (Left H1) <|> pure (Left H2)
+-- |     (whoWantsToAnswer :: Poll Animals) = switcher onlyCowsAnswer pollSupplier.event
+-- |     (answers :: Event Int) = sample whoWantsToAnswer surveymonger.event
+-- |   _ <- subscribe answers \v -> do log $ "answers GOT " <> show v
+-- |   surveymonger.push(...)
+-- |   pollSupplier.push(...)
+-- | ```
+-- |
+-- | ```
+-- | push to `pollSupplier` |                         onlyHorsesAnswer
+-- | push to `surveymonger` | C1->1     C1->11                             C1->21
+-- |                        | C2->2     C2->12                             C2->22
+-- |                        | H1->3     H1->13                             H1->23
+-- |                        | H2->4     H2->14                             H2->24
+-- | get in `answers`       | 1     2   11      12    _                    23       24
+-- | ```
 switcher :: forall event a. Pollable event event => IsEvent event => APoll event a -> event (APoll event a) -> APoll event a
-switcher b0 e = poll \s ->
-  EClass.keepLatest ((EClass.once s $> (sample b0 s)) `alt` map (\b -> sample b s) e)
+switcher initialPoll e = poll \s ->
+  EClass.keepLatest ((EClass.once s $> (sample initialPoll s)) `alt` map (\p -> sample p s) e)
 
 -- | Sample a `Poll` on some `Event` by providing a predicate function.
 gateBy :: forall event p a. Pollable event event => Filterable.Filterable event => (p -> a -> Boolean) -> APoll event p -> event a -> event a
@@ -202,11 +291,11 @@ integral
   -> APoll event t
   -> APoll event a
   -> APoll event a
-integral g initial t b =
+integral g initial pollT pollA =
   APoll \e ->
     let
-      x = sample b (e $> identity)
-      y = withLast (sampleBy Tuple t x)
+      x = sample pollA (e $> identity)
+      y = withLast (sampleBy Tuple pollT x)
       z = fold approx initial y
     in
       EClass.sampleOnRight z e
@@ -221,6 +310,37 @@ integral g initial t b =
 -- |
 -- | This function is a simpler version of `integral` where the function being
 -- | integrated takes values in the same field used to represent time.
+-- |
+-- | ```purescript
+-- | test = do
+-- |   timeSupplier <- liftST $ createPure
+-- |   heightSupplier <- liftST $ createPure
+-- |   surveymonger <- liftST $ createPure
+-- |   let
+-- |     (area :: Poll Number) = integral' 0.0 (step 10.0 timeSupplier.event) (step 100.0 heightSupplier.event)
+-- |     (answers :: Event Int) = sample area surveymonger.event
+-- |   _ <- subscribe answers \v -> do log $ "answers GOT " <> show v
+-- |   timeSupplier.push(...)
+-- |   heightSupplier.push(...)
+-- | ```
+-- |
+-- | ```
+-- | push to `surveymonger`   | show         show           show            show          show
+-- | push to `timeSupplier`   |        11.0         13.0                           14.0
+-- | push to `heightSupplier` |                                       1.0
+-- | get in `answers`         | "0.0"        "100.0"        "300.0"         "300.0"       "301.0"
+-- | ```
+-- |
+-- | ```purescript
+-- | (area :: Poll Number) = integral' 0.0 (sham timeSupplier.event) (sham heightSupplier.event)
+-- | ```
+-- |
+-- | ```
+-- | push to `surveymonger`   | show         show        show          show   show         show
+-- | push to `timeSupplier`   |        1.0                      2.0                  3.0
+-- | push to `heightSupplier` |                    1.0
+-- | get in `answers`         |                                        "0.0"  "0.0"        "1.0"
+-- | ```
 integral'
   :: forall event t
    . IsEvent event
@@ -251,11 +371,11 @@ derivative
   -> APoll event t
   -> APoll event a
   -> APoll event a
-derivative g t b =
+derivative g pollT pollA =
   APoll \e ->
     let
-      x = sample b (e $> identity)
-      y = withLast (sampleBy Tuple t x)
+      x = sample pollA (e $> identity)
+      y = withLast (sampleBy Tuple pollT x)
       z = map approx y
     in
       EClass.sampleOnRight z e
@@ -276,19 +396,6 @@ derivative'
   -> APoll event t
   -> APoll event t
 derivative' = derivative (_ $ identity)
-
--- | Compute a fixed point
-fixB :: forall event a. Pollable event event => IsEvent event => a -> (APoll event a -> APoll event a) -> APoll event a
-fixB a f =
-  poll \s ->
-    EClass.sampleOnRight
-      ( EClass.fix \event ->
-          let
-            b = f (step a event)
-          in
-            sample_ b s
-      )
-      s
 
 -- | Solve a first order differential equation of the form
 -- |
@@ -312,7 +419,7 @@ solve
   -> Poll t
   -> (Poll a -> Poll a)
   -> Poll a
-solve g a0 t f = fixB a0 \b -> integral g a0 t (f b)
+solve g a0 pollT f = fixB a0 \pollA -> integral g a0 pollT (f pollA)
 
 -- | Solve a first order differential equation.
 -- |
@@ -350,11 +457,11 @@ solve2
   -> Poll t
   -> (Poll a -> Poll a -> Poll a)
   -> Poll a
-solve2 g a0 da0 t f =
-  fixB a0 \b ->
-    integral g a0 t
-      ( fixB da0 \db ->
-          integral g da0 t (f b db)
+solve2 g a0 da0 pollT f =
+  fixB a0 \pollA ->
+    integral g a0 pollT
+      ( fixB da0 \pollDa ->
+          integral g da0 pollT (f pollA pollDa)
       )
 
 -- | Solve a second order differential equation.
@@ -374,12 +481,12 @@ solve2' = solve2 (_ $ identity)
 -- | Animate a `Poll` by providing a rendering function.
 animate
   :: forall scene
-   . APoll Event scene
+   . Poll scene
   -> (scene -> Effect Unit)
   -> Effect (Effect Unit)
-animate scene render = do
+animate scenePoll render = do
   { event, unsubscribe } <- animationFrame
-  u2 <- subscribe (sample_ scene event) render
+  u2 <- subscribe (sample_ scenePoll event) render
   pure do
     unsubscribe
     u2
@@ -406,13 +513,13 @@ filterMap
   => (a -> Maybe b)
   -> APoll event a
   -> APoll event b
-filterMap f b = poll \e -> Filterable.compact
-  $ sampleBy (\a ff -> map ff $ f a) b e
+filterMap f pollA = poll \e -> Filterable.compact
+  $ sampleBy (\a ff -> map ff $ f a) pollA e
 
 partitionMap :: forall event a b c. Pollable event event => Filterable.Compactable event => Functor event => (a -> Either b c) -> APoll event a -> { left :: APoll event b, right :: APoll event c }
-partitionMap f b = { left: filterMap (either Just (const Nothing)) fb, right: filterMap (either (const Nothing) Just) fb }
+partitionMap f pollA = { left: filterMap (either Just (const Nothing)) fb, right: filterMap (either (const Nothing) Just) fb }
   where
-  fb = f <$> b
+  fb = f <$> pollA
 
 instance (Functor event, Filterable.Compactable event, Pollable event event) => Filterable.Compactable (APoll event) where
   compact = filterMap identity
@@ -426,6 +533,36 @@ instance (Functor event, Filterable.Compactable event, Pollable event event) => 
     let o = partitionMap (eitherBool p) xs
     { no: o.left, yes: o.right }
 
+-- |
+-- | # sampleOnRight + pure
+-- |
+-- | ```purescript
+-- | (pollCows :: Poll String) = pure "C1" <|> pure "C2"
+-- | (pollCowToOwner :: Poll (String -> String)) = pure (_ <> "_foo") <|> pure (_ <> "_bar")
+-- | ```
+-- |
+-- | ```
+-- | push to `surveymonger`                         | (_<>"--1")                     (_<>"--2")                                            (_<>"--3")
+-- | get in `sampleOnRight pollCows pollCowToOwner` | "C2_foo--1" "C2_bar--1"        "C2_foo--2" "C2_bar--2"                               "C2_foo--3" "C2_bar--3"
+-- | get in `sampleOnLeft pollCows pollCowToOwner`  | _                              "C1_bar--1" "C2_bar--1"                               "C1_bar--2" "C2_bar--2"
+-- | get in `flip apply pollCows pollCowToOwner`    | "C1_bar--1" "C2_bar--1"        "C2_foo--1" "C2_bar--1" "C1_bar--2" "C2_bar--2"       "C2_foo--2" "C2_bar--2" "C1_bar--3" "C2_bar--3"
+-- | ```
+-- |
+-- | # sampleOnRight + step
+-- |
+-- | ```purescript
+-- | (pollCows :: Poll String) = step "C1" cowSupplier.event
+-- | (pollCowToOwner :: Poll (String -> String)) = step (_ <> "_foo") cowToOwner.event
+-- | ```
+-- |
+-- | ```
+-- | push to `surveymonger`                         | (_<>"--1")         (_<>"--2")                 (_<>"--3")                             (_<>"--4")                 (_<>"--5")                                   (_<>"--6")                     (_<>"--7")
+-- | push to `cowSupplier`                          |                                                                           "C2"
+-- | push to `cowToOwner`                           |                                                                                                                                            (_<>"_bar")
+-- | get in `sampleOnRight pollCows pollCowToOwner` | "C1_foo--1"        "C1_foo--2"                "C1_foo--3"                 _          "C2_foo--4"                "C2_foo--5"                _                 "C2_bar--6"                    "C2_bar--7"
+-- | get in `sampleOnLeft pollCows pollCowToOwner`  | _                  "C1_foo--1"                "C1_foo--2"                 _          "C2_foo--3"                "C2_foo--4"                _                 "C2_foo--5"                    "C2_bar--6"
+-- | get in `flip apply pollCows pollCowToOwner`    | "C1_bar--1"        "C1_foo--1" "C1_foo--2"    "C1_foo--2" "C1_foo--3"     _          "C1_foo--3" "C2_foo--4"    "C2_foo--4" "C2_foo--5"    _                 "C2_bar--5" "C2_bar--6"        "C2_bar--6" "C2_bar--7"
+-- | ```
 sampleOnRight
   :: forall event a b
    . Pollable event event
@@ -433,19 +570,170 @@ sampleOnRight
   => APoll event a
   -> APoll event (a -> b)
   -> APoll event b
-sampleOnRight a b = poll \e -> EClass.sampleOnRight (sample_ a e) (sampleBy composeFlipped b e)
+sampleOnRight pollA pollAB = poll \e -> EClass.sampleOnRight (sample_ pollA e) (sampleBy composeFlipped pollAB e)
 
 sampleOnLeft :: forall event a b. Pollable event event => IsEvent event => APoll event a -> APoll event (a -> b) -> APoll event b
-sampleOnLeft a b = poll \e -> EClass.sampleOnLeft (sample_ a e) (sampleBy composeFlipped b e)
+sampleOnLeft pollA pollAB = poll \e -> EClass.sampleOnLeft (sample_ pollA e) (sampleBy composeFlipped pollAB e)
 
+-- | Compute a fixed point
+-- |
+-- | # fixB + identity
+-- |
+-- | ```
+-- | push to `surveymonger`                                    | C1->1
+-- |                                                           | C2->2
+-- |                                                           | C3->3
+-- | get in `sample (fixB C1 identity) surveymonger` | 1
+-- | ```
+-- |
+-- | # fixB + pure
+-- |
+-- | ```
+-- | push to `surveymonger`                                                 | C1->1
+-- |                                                                        | C2->2
+-- |                                                                        | C3->3
+-- | get in `sample (fixB C1 (\i -> i <|> pure C2)) surveymonger` | 2
+-- | ```
+-- |
+-- | # fixB + step
+-- |
+-- | ```
+-- | push to `cowSupplier`                                                              | C0                 C3          C4
+-- | push to `surveymonger`                                                             |                        C1->1        C1->11
+-- |                                                                                    |                        C2->2        C2->12
+-- |                                                                                    |                        C3->3        C3->13
+-- |                                                                                    |                        C4->4        C4->14
+-- | get in `sample (fixB C1 (\i -> i <|> step C2 cowSupplier)) surveymonger` | _     (subscribe)  _   2       _    14
+-- | get in `sample (fixB C1 (\i -> step C2 cowSupplier <|> i)) surveymonger` | _     (subscribe)  _   1       _    14
+-- | ```
+-- |
+-- | # fixB + sham
+-- |
+-- | ```
+-- | push to `cowSupplier`                                                              | C0                C2         C3
+-- | push to `surveymonger`                                                             |                       C0->0       C0->10
+-- |                                                                                    |                       C1->1       C1->11
+-- |                                                                                    |                       C2->2       C2->12
+-- |                                                                                    |                       C3->3       C3->13
+-- |                                                                                    |                       C4->4       C4->14
+-- | get in `sample (fixB C1 (\i -> i <|> sham cowSupplier)) surveymonger`    | _     (subscribe) _   1       _   13
+-- | get in `sample (fixB C1 (\i -> sham cowSupplier <|> i)) surveymonger`    | _     (subscribe) _   1       _   13
+-- | ```
+fixB :: forall event a. Pollable event event => IsEvent event => a -> (APoll event a -> APoll event a) -> APoll event a
+fixB a f =
+  poll \s ->
+    EClass.sampleOnRight
+      ( EClass.fix \event ->
+          let
+            pollA = f (step a event)
+          in
+            sample_ pollA s
+      )
+      s
+
+-- | Compute a fixed point
+-- |
+-- | # Fix + identity
+-- |
+-- | ```
+-- | push to `surveymonger`                      | C1->1
+-- |                                             | C2->2
+-- |                                             | C3->3
+-- | get in `sample (fix identity) surveymonger` | ....nothing
+-- | ```
+-- |
+-- | # Fix + Pure
+-- |
+-- | ```
+-- | push to `surveymonger`                                   | C1->1
+-- |                                                          | C2->2
+-- |                                                          | C3->3
+-- | get in `sample (fix (\i -> i <|> pure C1)) surveymonger` | 1  1  1  1...
+-- | ```
+-- |
+-- | # fix + step
+-- |
+-- | ```
+-- | push to `cowSupplier`                                                | C0                            C2
+-- | push to `surveymonger`                                               |                    C0->0           C0->10
+-- |                                                                      |                    C1->1           C1->11
+-- |                                                                      |                    C2->2           C2->12
+-- |                                                                      |                    C3->3           C3->13
+-- | get in `sample (fix (\i -> i <|> step C1 cowSupplier)) surveymonger` | _                  1 1 1 1 1 1 1.....
+-- | get in `sample (fix (\i -> step C1 cowSupplier <|> i)) surveymonger` | _   (subscribe)    1          _    2 2 2 2 2 2.....
+-- | ```
+-- |
+-- | all cows before first survey are ignored
+-- |
+-- | ```
+-- | push to `cowSupplier`                                                | C0              C2              C3
+-- | push to `surveymonger`                                               |                      C0->0           C0->10
+-- |                                                                      |                      C1->1           C1->11
+-- |                                                                      |                      C2->2           C2->12
+-- |                                                                      |                      C3->3           C3->13
+-- | get in `sample (fix (\i -> i <|> step C1 cowSupplier)) surveymonger` | _               _    1 1 1 1 1 1 1.....
+-- | get in `sample (fix (\i -> step C1 cowSupplier <|> i)) surveymonger` | _   (subscribe) _    1          _    13 3 3 3 3 3 3 3 3.....
+-- | ```
+-- |
+-- | # fix + sham
+-- |
+-- | ```
+-- | push to `cowSupplier`                                             | C0               C1           C2
+-- | push to `surveymonger`                                            |                       C0->0
+-- |                                                                   |                       C1->1
+-- |                                                                   |                       C2->2
+-- |                                                                   |                       C3->3
+-- |                                                                   |                       C4->4
+-- | get in `sample (fix (\i -> i <|> sham cowSupplier)) surveymonger` | _   (subscribe)  _    _       2 2 2 2 2 2 2.....
+-- | get in `sample (fix (\i -> sham cowSupplier <|> i)) surveymonger` | _   (subscribe)  _    _       2 2 2 2 2 2 2.....
+-- | ```
 fix
   :: forall event a
    . Pollable event event
   => IsEvent event
   => (APoll event a -> APoll event a)
   -> APoll event a
-fix f = poll \e -> (\(Tuple a ff) -> ff a) <$> EClass.fix \ee -> sampleBy Tuple (f (sham (fst <$> ee))) e
+fix f = poll
+  let
+    innerPoll :: forall r. event (a -> r) -> event r
+    innerPoll e =
 
+      let
+        fixed :: event (Tuple a (a -> r))
+        fixed = EClass.fix \ee -> sampleBy Tuple (f (sham (fst <$> ee)) :: APoll event a) e
+      in
+        (\(Tuple a ff) -> ff a) <$> fixed
+  in
+    innerPoll
+
+-- | # Once + pure
+-- |
+-- | ```
+-- | push to `surveymonger`                                    | C1->1       C1->11
+-- |                                                           | C2->2       C2->12
+-- | get in `sample (once (pure C1 <|> pure C2)) surveymonger` | 1           _
+-- | ```
+-- |
+-- | # Once + sham
+-- |
+-- | ```
+-- | push to `cowSupplier`                                  | C1                      C2             C3
+-- | push to `surveymonger`                                 |       C1->1   C1->11          C1->21
+-- | ```
+-- |                                                        |       C2->2   C2->12          C2->22
+-- |                                                        |       C3->3   C3->13          C3->23
+-- | get in `sample (once (sham cowSupplier)) surveymonger` | _     _       _         12    _        _
+-- | ```
+-- |
+-- | # Once + step
+-- |
+-- | ```
+-- | push to `cowSupplier`                                     |                   C2
+-- | push to `surveymonger`                                    | C1->1   C1->11          C1->21
+-- |                                                           | C2->2   C2->12          C2->22
+-- |                                                           | C3->3   C3->13          C3->23
+-- | get in `sample (once (step C1 cowSupplier)) surveymonger` | 1       _         _     _
+-- | ```
 once :: forall event a. Pollable event event => IsEvent event => APoll event a -> APoll event a
 once a = poll \e -> EClass.once (sample a e)
 
@@ -473,7 +761,7 @@ createTagged
   -> ST Global (PollIO a)
 createTagged tag = do
   { event, push } <- Event.createTagged tag
-  { poll: p } <- rant (sham event)
+  { poll: p } <- rant (sham event) -- TODO: why not export unsubscribe?
   pure { poll: p, push }
 
 createPure
@@ -498,50 +786,132 @@ mailboxS = do
   { push, event } <- Event.mailboxS
   pure { poll: map sham event, push }
 
--- | Once an event comes in, it just goes on and on and on and on (a rant) without listening to future events
+-- | Once an event comes in, it just goes on and on and on and on (a rant) without listening to future events.
+-- | Rant ignores the initial event and broadcasts all the others.
+-- |
+-- | # rant + pure
+-- |
+-- | ```
+-- | push to `surveymonger`                                    | C1->1     C1->11
+-- |                                                           | C2->2     C2->12
+-- | get in `sample (rant (pure C1 <|> pure C2)) surveymonger` | _         _
+-- | ```
+-- |
+-- | # rant + sham
+-- |
+-- | ```
+-- | push to `cowSupplier`                                        | C0             C1                    C2             C3
+-- | push to `surveymonger`                                       |                    C1->1   C1->11          C1->21
+-- |                                                              |                    C2->2   C2->12          C2->22
+-- |                                                              |                    C3->3   C3->13          C3->23
+-- | get in `sample (rant (sham cowSupplier.event)) surveymonger` | _ (subscribe)  _   _       _         12    _        23
+-- | ```
+-- |
+-- | `unsubscribe` makes poll ignore `cowSupplier`
+-- |
+-- | ```
+-- | push to `cowSupplier`                                        | C0             C1                    C2                           C3
+-- | push to `surveymonger`                                       |                    C1->1   C1->11          C1->21
+-- |                                                              |                    C2->2   C2->12          C2->22
+-- |                                                              |                    C3->3   C3->13          C3->23
+-- | get in `sample (rant (sham cowSupplier.event)) surveymonger` | _ (subscribe)  _   _       _         12    _       (unsubscribe)  _
+-- | ```
+-- |
+-- | # rant + step
+-- |
+-- | ```
+-- | push to `cowSupplier`                                           | C0             C2                    C3
+-- | push to `surveymonger`                                          |                    C1->1   C1->11          C1->21
+-- |                                                                 |                    C2->2   C2->12          C2->22
+-- |                                                                 |                    C3->3   C3->13          C3->23
+-- | get in `sample (rant (step C1 cowSupplier.event)) surveymonger` | _  (subscribe) _   _       _         _     _
+-- | get in `...` (but without `EClass.once requesterEvent`)         | _  (subscribe) _   _       1         _     13
+-- | ```
 rant
   :: forall a
    . Poll a
   -> ST Global { poll :: Poll a, unsubscribe :: ST Global Unit }
 rant a = do
   ep <- Event.createPure
-  started <- STRef.new false
-  unsub <- STRef.new (pure unit)
+  maybeUnsubscribe <- STRef.new Nothing
   pure
-    { unsubscribe: join (STRef.read unsub)
-    , poll: poll \e -> makeEvent \s -> do
-        st <- STRef.read started
-        when (not st) do
-          unsubscribe <- s (sample_ a (EClass.once e)) \i -> justNone (ep.push i)
-          -- ?hole -- (pure <<< pure)
-          void $ STRef.write true started
-          void $ flip STRef.write unsub unsubscribe
-        u3 <- s (sampleOnRightOp e ep.event) justOne
-        pure do
-          u3
+    { unsubscribe: do
+        STRef.read maybeUnsubscribe >>= case _ of
+          Nothing -> pure unit
+          Just unsubscribe -> unsubscribe
+    , poll: poll \requesterEvent -> makeEvent \responseEventCallback -> do
+        STRef.read maybeUnsubscribe >>= case _ of
+          Nothing -> do
+            unsubscribe <- responseEventCallback (sample_ a (EClass.once requesterEvent) :: Event a) \(i :: a) -> justNone (ep.push i)
+            void $ flip STRef.write maybeUnsubscribe (Just unsubscribe)
+          Just _ -> pure unit
+        u3 <- responseEventCallback (EClass.sampleOnRightOp requesterEvent ep.event) justOne
+        pure u3
     }
 
+-- | Deflect saves all initial events (events from `pure` for example) and ignores others
+-- | Rant and deflect can be considered opposites.
+-- |
+-- | # Deflect + pure
+-- |
+-- | ```
+-- | push to `surveymonger`                                       | C1->1       C1->11
+-- |                                                              | C2->2       C2->12
+-- | get in `sample (deflect (pure C1 <|> pure C2)) surveymonger` | 1      2    11      12
+-- | ```
+-- |
+-- | # Deflect + sham
+-- |
+-- | ```
+-- | push to `cowSupplier`                                     | C1                      C2             C3
+-- | push to `surveymonger`                                    |       C1->1   C1->11          C1->21
+-- |                                                           |       C2->2   C2->12          C2->22
+-- |                                                           |       C3->3   C3->13          C3->23
+-- | get in `sample (deflect (sham cowSupplier)) surveymonger` | _     _       _         _     _        _
+-- | ```
+-- |
+-- | # Deflect + step
+-- |
+-- | ```
+-- | push to `cowSupplier`                                        | C0             C2                    C3
+-- | push to `surveymonger`                                       |                    C1->1   C1->11          C1->21
+-- |                                                              |                    C2->2   C2->12          C2->22
+-- |                                                              |                    C3->3   C3->13          C3->23
+-- | get in `sample (deflect (step C1 cowSupplier)) surveymonger` | _  (subscribe) _   1       11        _     21
+-- | ```
 deflect
   :: forall a
    . Poll a
   -> ST Global (Poll a)
-deflect a = do
+deflect pollA = do
   ep <- STRef.new []
-  started <- STRef.new false
-  unsub <- STRef.new (pure unit)
-  pure $ poll \e -> makeEvent \s -> do
-    st <- STRef.read started
-    when (not st) do
-      unsubscribe <- s (sample_ a (EClass.once e)) \i -> justNone do
-        void $ liftST $ flip STRef.modify ep $ flip Array.snoc i
-      void $ STRef.write true started
-      void $ STRef.write unsubscribe unsub
-    u3 <- s e \f -> justManyM do
-      join (STRef.read unsub)
-      r <- STRef.read ep
-      pure $ map f r
-    pure do
-      u3
+  maybeUnsubscribe <- STRef.new Nothing
+  let
+    innerPoll :: forall r. Event (a -> r) -> Event r
+    innerPoll = \e ->
+      let
+        innerEvent :: (forall x. Event x -> (x -> EventfulProgram r) -> ST Global (ST Global Unit)) -> ST Global (ST Global Unit)
+        innerEvent s = do
+          STRef.read maybeUnsubscribe >>= case _ of
+            Nothing -> do
+              unsubscribe <- (s :: Event a -> (a -> ProgramfulEvent Unit) -> ST Global (ST Global Unit)) (sample_ pollA (EClass.once e) :: Event a) \i -> justNone do
+                void $ liftST $ flip STRef.modify ep $ flip Array.snoc i
+              void $ STRef.write (Just unsubscribe) maybeUnsubscribe
+            Just _ -> do
+              pure unit
+          u3 <- (s :: Event (a -> r) -> ((a -> r) -> EventfulProgram r) -> ST Global (ST Global Unit)) (e :: Event (a -> r)) \f -> justManyM do
+            STRef.read maybeUnsubscribe >>= case _ of
+              Nothing -> do
+                pure unit
+              Just unsubscribe -> do
+                unsubscribe
+            r <- STRef.read ep
+            pure $ map f r
+          pure do
+            u3
+      in
+        makeEvent innerEvent
+  pure $ poll innerPoll
 
 data KeepLatestOrder event a b
   = KeepLatestStart (APoll event a) (a -> b)
