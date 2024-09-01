@@ -11,7 +11,7 @@ module FRP.Poll
   , derivative
   , derivative'
   , dredge
-  , fixB
+  , fixWithInitial
   , gate
   , gateBy
   , integral
@@ -23,9 +23,6 @@ module FRP.Poll
   , mergeMapPure
   , mergePure
   , poll
-  , pollFromEvent
-  , pollFromOptimizedRep
-  , pollFromPoll
   , rant
   , sample
   , sampleBy
@@ -201,6 +198,16 @@ merge a = case foldr go { l: [], m: [], r: [] } a of
   { l, m, r } -> PureAndPoll l (Poll.sham (Event.merge m) <|> Poll.merge r)
   where
 
+  go
+    :: Poll a
+    -> { l :: Array a
+       , m :: Array (Event a)
+       , r :: Array (Poll.Poll a)
+       }
+    -> { l :: Array a
+       , m :: Array (Event a)
+       , r :: Array (Poll.Poll a)
+       }
   go (OnlyPure q) { l, m, r } = { l: q <> l, m, r }
   go (OnlyEvent q) { l, m, r } = { l, m: [ q ] <> m, r }
   go (PureAndEvent x y) { l, m, r } = { l: x <> l, m: [ y ] <> m, r }
@@ -301,8 +308,8 @@ derivative'
 derivative' = derivative (_ $ identity)
 
 -- | Compute a fixed point
-fixB :: forall a. a -> (Poll a -> Poll a) -> Poll a
-fixB a f =
+fixWithInitial :: forall a. a -> (Poll a -> Poll a) -> Poll a
+fixWithInitial a f =
   poll \s ->
     EClass.sampleOnRight
       ( EClass.fix \event ->
@@ -312,6 +319,16 @@ fixB a f =
             sample_ b s
       )
       s
+
+fix
+  :: forall a
+   . (Poll a -> Poll a)
+  -> Poll a
+fix f = do
+  let o = f empty
+  case o of
+    OnlyEvent _ -> pollFromEvent $ EClass.fix (dimap pollFromEvent eventOrBust f)
+    _ -> pollFromPoll $ EClass.fix (dimap pollFromPoll toPoll f)
 
 -- | Solve a first order differential equation of the form
 -- |
@@ -335,7 +352,7 @@ solve
   -> Poll t
   -> (Poll a -> Poll a)
   -> Poll a
-solve g a0 t f = fixB a0 \b -> integral g a0 t (f b)
+solve g a0 t f = fixWithInitial a0 \b -> integral g a0 t (f b)
 
 -- | Solve a first order differential equation.
 -- |
@@ -374,9 +391,9 @@ solve2
   -> (Poll a -> Poll a -> Poll a)
   -> Poll a
 solve2 g a0 da0 t f =
-  fixB a0 \b ->
+  fixWithInitial a0 \b ->
     integral g a0 t
-      ( fixB da0 \db ->
+      ( fixWithInitial da0 \db ->
           integral g da0 t (f b db)
       )
 
@@ -458,16 +475,6 @@ sampleOnLeft a b = pollFromPoll (toPoll a `EClass.sampleOnLeft` toPoll b)
 eventOrBust :: Poll ~> Event
 eventOrBust (OnlyEvent a) = a
 eventOrBust _ = empty
-
-fix
-  :: forall a
-   . (Poll a -> Poll a)
-  -> Poll a
-fix f = do
-  let o = f empty
-  case o of
-    OnlyEvent _ -> pollFromEvent $ EClass.fix (dimap pollFromEvent eventOrBust f)
-    _ -> pollFromPoll $ EClass.fix (dimap pollFromPoll toPoll f)
 
 once :: Poll ~> Poll
 once i = pollFromPoll $ EClass.once (toPoll i)

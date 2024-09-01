@@ -1,10 +1,17 @@
-module Test.Main where
+module Test.Main
+  ( main
+  ) where
 
+import Debug
+import FRP.Event
+import FRP.Event.Class
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Monad.Free (Free, liftF, resume)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Class (liftST)
+import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Ref (STRef)
 import Control.Monad.ST.Ref as STRef
 import Control.Plus (empty)
@@ -19,18 +26,18 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (over, under)
 import Data.Op (Op(..))
 import Data.Profunctor (lcmap)
+import Data.Time.Duration (Seconds(..), fromDuration)
 import Data.Traversable (foldr, for_, sequence)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
-import Debug (spy)
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..), delay, launchAff_)
 import Effect.Class (liftEffect)
+import Effect.Class.Console (log)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (justNone, justOne, makeEvent, memoize, merge, subscribe)
 import FRP.Event as Event
-import FRP.Event.Class (fold, keepLatest, once, sampleOnRight)
 import FRP.Event.Time (throttle, withTime)
 import FRP.Poll as OptimizedPoll
 import FRP.Poll.Unoptimized as UnoptimizedPoll
@@ -40,6 +47,7 @@ import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Console (write)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner (runSpec)
+import Unsafe.Coerce (unsafeCoerce)
 
 modify__ :: forall a r. (a -> a) -> STRef r a -> ST r Unit
 modify__ a b = void $ STRef.modify a b
@@ -276,7 +284,6 @@ suite2 name { setup, prime, create, toEvent, underTest, muxEvent } = do
                   void $ STObject.poke "foo" 1 obj
                   pure 1
                 Just x -> do
-                  let _ = spy "OHHI" x
                   void $ STObject.poke "foo" (x + 1) obj
                   pure (x + 1)
           let foldy = (muxEvent (Event.foldObj go) (underTest testing))
@@ -403,6 +410,15 @@ suite7 name { setup, prime, create, mailbox, toEvent, underTest } = do
     o <- liftST $ STRef.read r
     o `shouldEqual` [ false, false, true ]
     u
+
+-- eventx :: Event Int
+
+purePollX :: UnoptimizedPoll.Poll Int -- Event (Int -> r) -> Event r
+purePollX = pure 42
+
+-- forall r. event (Int -> r) -> event r
+samplex :: forall t. Event (Int -> t) -> Event Int
+samplex pollableB = UnoptimizedPoll.sample (purePollX) (map (\(intToT :: Int -> t) -> \int -> int) pollableB)
 
 suite8 name { setup, prime, create, toEvent, underTest } = do
   describe name do
@@ -730,22 +746,35 @@ main = do
           }
         describe "Unique to Poll" do
           it "should obliterate purity when on a rant" $ liftEffect do
+            -- Create a new event and a corresponding function to push values to it.
             { event, push } <- liftST $ Event.create
+            -- Create a reference to store an array of results.
             rf <- liftEffect $ Ref.new []
+            -- Subscribe to the event using a pure poll that always returns 42.
+            -- Whenever the event occurs, add the value (42) to the reference array.
             unsub <- Event.subscribe (UnoptimizedPoll.sample_ (pure 42 :: UnoptimizedPoll.Poll Int) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            -- Push a unit value to the event, triggering the subscription.
             liftEffect do
               push unit
+              -- Read the reference array and check that it contains 42.
               o <- Ref.read rf
               o `shouldEqual` [ 42 ]
+              -- Unsubscribe from the event and reset the reference array.
               unsub
               Ref.write [] rf
+            -- Create a ranting poll, which ensures that the poll is only triggered once.
             ranting <- liftST $ UnoptimizedPoll.rant (pure 42)
+            -- Iterate twice to test the behavior of the ranting poll.
             for_ (0 .. 1) \_ -> do
+              -- Subscribe to the event using the ranting poll.
               unsub2 <- Event.subscribe (UnoptimizedPoll.sample_ ranting.poll event) (\i -> Ref.modify_ (Array.cons i) rf)
+              -- Push a unit value to the event, triggering the subscription.
               liftEffect do
                 push unit
+                -- Check that the reference array is still empty, meaning the ranting poll didn't trigger.
                 o <- Ref.read rf
                 o `shouldEqual` []
+                -- Unsubscribe from the event and reset the reference array.
                 unsub2
                 Ref.write [] rf
           it "should mix together UnoptimizedPoll.polling and purity" $ liftEffect do
@@ -781,19 +810,24 @@ main = do
             for_ (0 .. 1) \_ -> do
               unsub2 <- Event.subscribe (UnoptimizedPoll.sample_ deflecting event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
-                push unit
                 o <- Ref.read rf
-                o `shouldEqual` [ 42, 42 ]
+                o `shouldEqual` []
                 pl.push 43
+
                 oo <- Ref.read rf
                 -- UnoptimizedPoll.deflected, so ignores incoming stuff
-                oo `shouldEqual` [ 42, 42 ]
+                oo `shouldEqual` []
+                push unit
+                ooo <- Ref.read rf
+                -- UnoptimizedPoll.deflected, so ignores incoming stuff
+                ooo `shouldEqual` [ 42, 42 ]
+
                 unsub2
                 Ref.write [] rf
           it "should have a fixed point with an initial value" $ liftEffect do
             { event, push } <- liftST $ Event.create
             rf <- liftEffect $ Ref.new []
-            unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.fixB 0 (map (add 1))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+            unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.fixWithInitial 0 (map (add 1))) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
               push unit
               push unit
@@ -848,7 +882,7 @@ main = do
             it "should give some sane approximation" $ liftEffect do
               { event, push } <- liftST $ Event.create
               rf <- liftEffect $ Ref.new []
-              unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.derivative' (UnoptimizedPoll.fixB 1.0 (map (add 1.0))) (UnoptimizedPoll.fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.derivative' (UnoptimizedPoll.fixWithInitial 1.0 (map (add 1.0))) (UnoptimizedPoll.fixWithInitial 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 push unit
@@ -862,7 +896,7 @@ main = do
             it "should give some sane approximation" $ liftEffect do
               { event, push } <- liftST $ Event.create
               rf <- liftEffect $ Ref.new []
-              unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.integral' 42.0 (UnoptimizedPoll.fixB 1.0 (map (add 1.0))) (UnoptimizedPoll.fixB 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
+              unsub <- Event.subscribe (UnoptimizedPoll.sample_ (UnoptimizedPoll.integral' 42.0 (UnoptimizedPoll.fixWithInitial 1.0 (map (add 1.0))) (UnoptimizedPoll.fixWithInitial 1.0 (map (mul 3.0)))) event) (\i -> Ref.modify_ (Array.cons i) rf)
               liftEffect do
                 push unit
                 push unit
@@ -1004,14 +1038,14 @@ main = do
             rf <- liftEffect $ Ref.new []
             unsub <- liftEffect $ Event.subscribe (throttle (Milliseconds 1000.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
             liftEffect do
-              under Op withTime push 1
-              under Op withTime push 2
-              under Op withTime push 3
-              under Op withTime push 4
+              withTime push 1
+              withTime push 2
+              withTime push 3
+              withTime push 4
             delay (Milliseconds 1500.0)
             liftEffect do
-              under Op withTime push 5
-              under Op withTime push 6
+              withTime push 5
+              withTime push 6
               o <- Ref.read rf
               map _.value o `shouldEqual` [ 5, 1 ]
               unsub
@@ -1021,14 +1055,14 @@ main = do
                 { event, push } <- liftST $ Event.create
                 rf <- liftEffect $ Ref.new []
                 unsub <- liftEffect $ Event.subscribe (throttle (Milliseconds 500.0) event) (\i -> Ref.modify_ (Array.cons i) rf)
-                liftEffect $ under Op withTime push unit
+                liftEffect $ withTime push unit
                 when emitSecond do
-                  liftEffect $ under Op withTime push unit
+                  liftEffect $ withTime push unit
                 delay $ Milliseconds 250.0
-                liftEffect $ under Op withTime push unit
+                liftEffect $ withTime push unit
                 delay $ Milliseconds 300.0
-                liftEffect $ under Op withTime push unit
-                liftEffect $ under Op withTime push unit
+                liftEffect $ withTime push unit
+                liftEffect $ withTime push unit
                 o <- liftEffect $ Ref.read rf
                 length o `shouldEqual` 2
                 liftEffect $ unsub

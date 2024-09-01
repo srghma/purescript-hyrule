@@ -2,13 +2,15 @@
   "name": "purescript-hyrule",
   "version": "2.3.5",
   "description": "A rock-hard fork of `purescript-event`.",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "spago test --pedantic-packages",
     "test:purs-backend-es": "spago build && purs-backend-es bundle-app --main Test.Main --platform node --to output-es/test.js && node output-es/test.js",
     "test:esbuild": "spago bundle --module Test.Main --platform node --outfile output/test.js && node output/test.js",
     "format": "purs-tidy format-in-place src test",
-    "check": "purs-tidy check src test"
+    "check": "purs-tidy check src test",
+    "build:production": "spago build && purs-backend-es build"
   },
   "repository": {
     "type": "git",
@@ -22,10 +24,13 @@
   },
   "homepage": "https://github.com/mikesol/purescript-hyrule#readme",
   "devDependencies": {
+    "esbuild": "^0.20.2",
     "purescript": "^0.15.15",
     "purs-backend-es": "^1.4.2",
     "purs-tidy": "^0.11.0",
-    "esbuild": "^0.20.2",
     "spago": "next"
+  },
+  "dependencies": {
+    "prettyprint": "^1.1.2"
   }
 }

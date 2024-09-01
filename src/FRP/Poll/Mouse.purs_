@@ -1,0 +1,45 @@
+module FRP.Poll.Mouse where
+
+import FRP.Event
+import Prelude
+
+import Data.Maybe (Maybe)
+import Data.Op (Op(..))
+import Data.Set as Set
+import FRP.Event.Mouse (Mouse, withPosition, withButtons)
+import FRP.Poll (Poll, poll)
+import Unsafe.Coerce (unsafeCoerce)
+import Control.Monad.ST (ST)
+import Control.Monad.ST.Class (liftST)
+import Control.Monad.ST.Global (Global)
+import Control.Monad.ST.Ref (STRef)
+import Control.Monad.ST.Ref as STRef
+import Effect (Effect)
+
+-- position m = poll \e -> map (\{ value, pos } -> value pos) (withPosition m (unsafeCoerce unit))
+
+-- | A `Poll` which reports the current mouse position, if it is known.
+-- positionDoesntWork :: Mouse -> Poll (Maybe { x :: Int, y :: Int })
+-- positionDoesntWork m =
+--   let
+--     pollInsides :: forall r . Event (Maybe { x :: Int, y :: Int}  -> r) -> Event r
+--     pollInsides event =
+--       let
+--         eventInsides
+--           :: _
+--           -> ST Global (ST Global Unit)
+--         eventInsides giveMe_eventb_btoEventfulProgram_iGive_StSt = do
+--           pure (pure unit)
+--       in makeEvent eventInsides
+--   in poll pollInsides
+
+-- position :: Mouse -> Effect (Poll (Maybe { x :: Int, y :: Int }))
+-- position m = do
+--   { poll, push } <- Poll.create
+-- ...
+
+-- withPosition m (Op \f -> ?a)
+
+-- | A `Poll` which reports the mouse buttons which are currently pressed.
+-- buttons :: Mouse -> Poll (Set.Set Int)
+-- buttons m = poll \e -> map (\{ value, buttons: bs } -> value bs) (withButtons m e)

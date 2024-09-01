@@ -1,30 +1,30 @@
 module FRP.Event.Class
-  ( class IsEvent
+  ( (*|>)
+  , (<**>)
+  , (<**|>)
+  , (<*|>)
+  , (<|*)
+  , (<|**>)
+  , (<|*>)
+  , applyOp
+  , class IsEvent
+  , count
+  , fix
   , fold
   , folded
-  , count
-  , mapAccum
-  , withLast
-  , sampleOnRight
-  , once
-  , (<|**>)
-  , sampleOnRightOp
-  , (<|*>)
-  , sampleOnRight_
-  , (<|*)
-  , sampleOnLeft
-  , (<**|>)
-  , sampleOnLeftOp
-  , (<*|>)
-  , sampleOnLeft_
-  , (*|>)
-  , applyOp
-  , (<**>)
-  , keepLatest
-  , fix
   , gate
   , gateBy
+  , keepLatest
+  , mapAccum
   , module Data.Filterable
+  , once
+  , sampleOnLeft
+  , sampleOnLeftOp
+  , sampleOnLeft_
+  , sampleOnRight
+  , sampleOnRightOp
+  , sampleOnRight_
+  , withLast
   ) where
 
 import Prelude
@@ -88,7 +88,7 @@ withLast e = filterMap identity (fold step Nothing e)
 -- | For example, to keep the index of the current event:
 -- |
 -- | ```purescript
--- | mapAccum (\x i -> Tuple (i + 1) (Tuple x i)) 0`.
+-- | mapAccum (\x i -> Tuple (i + 1) (Tuple x i)) 0
 -- | ```
 mapAccum :: forall event a b c. IsEvent event => (a -> b -> Tuple a c) -> a -> event b -> event c
 mapAccum f acc xs = filterMap snd
@@ -129,6 +129,6 @@ gateBy f sampled sampler = compact $
 
 -- | Fold over values received from some `Event`, creating a new `Event`.
 fold :: forall event a b. IsEvent event => (b -> a -> b) -> b -> event a -> event b
-fold f b e = fix \i -> sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e)
+fold f b e = fix \i -> sampleOnRight (i <|> (once e $> b)) ((flip f) <$> e :: event (b -> b))
 
 data OnceTracker a = Initial | Latch a | Stop
