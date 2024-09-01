@@ -1,5 +1,9 @@
 module FRP.Event.Mouse
-  ( Mouse
+  ( Mouse(..)
+  , Position
+  , Buttons
+  , readPosition
+  , readButtons
   , getMouse
   , disposeMouse
   , down'
@@ -26,12 +30,21 @@ import Web.HTML (window)
 import Web.HTML.Window (toEventTarget)
 import Web.UIEvent.MouseEvent (button, clientX, clientY, fromEvent)
 
+type Position = { x :: Int, y :: Int }
+
+type Buttons = Set.Set Int
 -- | A handle for creating events from the mouse position and buttons.
 newtype Mouse = Mouse
-  { position :: Ref.Ref (Maybe { x :: Int, y :: Int })
-  , buttons :: Ref.Ref (Set.Set Int)
+  { position :: Ref.Ref (Maybe Position)
+  , buttons :: Ref.Ref Buttons
   , dispose :: Effect Unit
   }
+
+readPosition :: Mouse -> Effect (Maybe Position)
+readPosition (Mouse { position }) = Ref.read position
+
+readButtons :: Mouse -> Effect Buttons
+readButtons (Mouse { buttons }) = Ref.read buttons
 
 -- | Get a handle for working with the mouse.
 getMouse :: Effect Mouse
