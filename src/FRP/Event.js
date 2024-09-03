@@ -1,5 +1,10 @@
 export const objHack = (tag) => () => {
-  return { r: false, q: [], m: [{}], tag };
+  return {
+    r: false, // isRunning
+    q: [],    // queue
+    m: [{}],  // subscriptions
+    tag       // dubug tag
+  };
 };
 
 export const insertObjHack = (k, v, o) => {
@@ -35,9 +40,9 @@ export const fastForeachOhE = (o, ff) => {
       return;
     }
     o.r = true;
-    const M = {};
+    const M = {}; // new subscription object
     run(o, M, f, 0);
-    o.m.length = 0;
+    o.m.length = 0; // make empty
     o.m.push(M);
     o.r = false;
     f = o.q.shift();

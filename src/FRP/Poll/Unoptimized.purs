@@ -176,6 +176,8 @@ mergeMap f a = APoll \e -> Event.mergeMap (flip sample e <<< f) a
 -- | A poll where the answers are rigged (influenced/given by) by the nefarious `Event a`
 -- | `sham` (fake) because "poll is not fair, because it is controlled by an event"
 -- |
+-- | # Example
+-- |
 -- | ```purescript
 -- | data Cow = C1 | C2 | C3
 -- | test = do
@@ -205,6 +207,26 @@ mergeMap f a = APoll \e -> Event.mergeMap (flip sample e <<< f) a
 -- |                                                 |       C2->2   C2->12          C2->22
 -- |                                                 |       C3->3   C3->13          C3->23
 -- | get in `sample (sham cowSupplier) surveymonger` | _     _       _         12    _        23
+-- | ```
+-- |
+-- | # If sham is listening for sham
+-- |
+-- | Eta expansion
+-- |
+-- | ```
+-- | x :: Event Int
+-- | x = sample_ (sham event1) event1
+-- | x = sample (map const $ sham event1) (map applyFlipped event1)
+-- | x = sample (map const $ APoll \e -> EClass.sampleOnLeft event1 e) (map applyFlipped event1)
+-- | x = EClass.sampleOnLeft event1 (map (_ <<< const) (map applyFlipped event1))
+-- | x = EClass.sampleOnLeft event1 (map (const identity) event1 :: Event (Int -> Int))
+-- | ```
+-- |
+-- | Result
+-- |
+-- | ```
+-- | push to `event1`                      | 1     2     3
+-- | get in `sample_ (sham event1) event1` | _     2     3
 -- | ```
 sham :: forall event. IsEvent event => event ~> APoll event
 sham i = poll \e -> EClass.sampleOnLeft i e
